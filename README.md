@@ -50,7 +50,23 @@ python3 src/ps_data.py CON_D_0000000 0.16
 python3 src/ps_plot.py CON_D_0000000 0.02
 ```
 
-## Method (in progress)
+## Method & results
 
-Features: **LFCC**, **delta / delta-delta**, **STFT spectrogram**. Detection +
-localization model and evaluation results to follow.
+Features: **LFCC**, **LFCC + Δ/ΔΔ**, **STFT spectrogram** → mean+std pooled to
+0.16 s windows aligned with the segment labels → per-window logistic regression
+predicts `P(spoof)` (localization); utterance score = max window prob (detection).
+
+```
+src/features.py       LFCC / delta-delta / STFT extraction + pooling
+src/dataset.py        sample dev utts, build window features + labels
+src/experiment.py     train per feature, report EER/AUC/F1 (run this)
+src/localize_demo.py  per-utterance localization figure
+```
+
+```bash
+python3 src/experiment.py
+```
+
+Best single feature (STFT-spec) reaches **utterance EER 9.4 %, AUC 0.97** and
+**window EER 16.9 %** on a held-out dev sample. Full table, methodology and
+caveats in **[RESULTS.md](RESULTS.md)**.
