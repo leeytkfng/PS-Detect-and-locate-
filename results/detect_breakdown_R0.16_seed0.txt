@@ -1,0 +1,11 @@
+# detection breakdown | R=0.16s seed=0
+  test utts: bonafide=146 partial=221 full=83
+
+feature     |  bona-vs-ALL |  bona-vs-FULL | bona-vs-PARTIAL
+            |    EER%  AUC |    EER%   AUC |     EER%    AUC
+------------------------------------------------------------
+LFCC        |  21.3 0.878 |  13.5 0.939  |  24.0  0.855
+LFCC+d+dd   |  20.6 0.881 |  12.2 0.940  |  24.2  0.859
+STFT-spec   |   9.4 0.971 |   5.8 0.990  |  10.7  0.964
+
+bona-vs-PARTIAL is the realistic threat; bona-vs-FULL is the easy case.
