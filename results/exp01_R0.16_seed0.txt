@@ -1,0 +1,11 @@
+# PartialSpoof dev | resolution=0.16s | seed=0
+  utts=1500 (bona=500 partial=750 full=250) | windows=32800 | spoof-window rate=0.441
+
+## Results
+feature      dim | win-EER% win-AUC win-F1 win-bAcc | utt-EER% utt-AUC
+----------------------------------------------------------------------
+LFCC          40 |    22.36   0.842  0.756    0.776 |    21.31   0.878
+LFCC+d+dd    120 |    21.21   0.861  0.768    0.788 |    20.64   0.881
+STFT-spec    514 |    16.94   0.905  0.814    0.831 |     9.40   0.971
+
+(win-* = localization @ window level; utt-* = detection @ utterance level)
