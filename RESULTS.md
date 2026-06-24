@@ -55,6 +55,26 @@ Localization example (held-out `CON_D_0000022`): predicted `P(spoof)` rises into
 the decision region exactly over the ground-truth spoof span.
 See [figures/localize_stft_CON_D_0000022.png](figures/localize_stft_CON_D_0000022.png).
 
+## 3b. Is detection actually good? (breakdown)
+
+The headline utt-EER could be inflated by *fully* spoofed utterances (trivial to
+catch). Splitting by attack type (`python3 src/detect_breakdown.py`, test set:
+146 bonafide / 221 partial / 83 full):
+
+| feature | bona-vs-ALL EER% / AUC | bona-vs-FULL (easy) | bona-vs-PARTIAL (hard) |
+|---|---|---|---|
+| LFCC | 21.3 / 0.878 | 13.5 / 0.939 | 24.0 / 0.855 |
+| LFCC+Δ+ΔΔ | 20.6 / 0.881 | 12.2 / 0.940 | 24.2 / 0.859 |
+| **STFT-spec** | 9.4 / 0.971 | **5.8 / 0.990** | **10.7 / 0.964** |
+
+**Verdict.** Yes, full-spoof pulls the headline down a bit — but the *realistic*
+case (bonafide vs **partial** spoof) with STFT is still **EER 10.7 %, AUC 0.964**,
+genuinely usable for a simple linear baseline. LFCC-family features are much
+weaker on partial spoof (~24 % EER) → the **STFT spectrogram is doing the real
+work**. For reference, deep SOTA reaches ~0.5–4 % utt-EER, so this is a solid
+baseline, not a finished detector. **Localization (window EER 16.9 %) is the
+weaker part and the main place to improve.**
+
 ## 4. Limitations / next steps
 
 - Trains/tests on a **subsample of dev** split by utterance (the official `train`
