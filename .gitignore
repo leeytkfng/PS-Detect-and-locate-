@@ -1,0 +1,16 @@
+# PartialSpoof dataset + upstream clone (huge, downloaded separately)
+partialspoof/
+
+# python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# experiment outputs (keep curated ones under figures/ explicitly)
+*.tar.gz
+cache/
+models/*.pkl
+models/*.joblib
+
+# os/editor
+.DS_Store
