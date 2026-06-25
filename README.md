@@ -34,39 +34,58 @@ We use the **dev** split only (train/eval are ~5–6 GB each and skipped for now
 ## Layout
 
 ```
-src/
-  ps_data.py   data paths, protocol + segment-label loaders, frames->intervals
-  ps_plot.py   waveform + spectrogram with spoof spans shaded
-figures/       audio<->label verification plots
+src/        pipeline (ps_data, features, pipeline, model, evaluate, run) + make_report
+analysis/   exploratory / figure scripts (label verification, seam DSP, ...)
+figures/    generated plots
+results/    saved experiment outputs
+report/     PDF report
 ```
+
+## Pipeline
+
+```
+[1] audio (16kHz wav)
+[2] framing (25ms / 10ms hop)
+[3] DSP features (per frame)
+    A. magnitude : STFT log-mag, LFCC(+d+dd)
+    B. phase     : IF-deviation, phase flux
+    C. discontinuity : spectral flux, log-energy d2
+[4] window pooling (0.16s, mean+std+max)  -> 1:1 with segment labels
+[5] light classifier (LogReg -> LightGBM)
+[6] window P(spoof):  localization = sequence,  detection = max pool
+[7] post-proc (median smoothing) + eval (EER / Range-EER)
+```
+
+| module | role | step |
+|---|---|---|
+| `src/ps_data.py` | data access, protocol/label loaders | [1] |
+| `src/features.py` | framing + DSP feature groups + pooling | [2][3][4] |
+| `src/pipeline.py` | sampling + window dataset build | [1][2][4] |
+| `src/model.py` | classifier, detection max-pool, smoothing | [5][6][7] |
+| `src/evaluate.py` | EER metrics (+ Range-EER stub) | [7] |
+| `src/run.py` | end-to-end orchestration | [1]->[7] |
+
+`analysis/` holds exploratory/figure scripts (label verification, resolution
+comparison, seam DSP analysis). `src/make_report.py` builds the PDF report.
 
 ## Quick start
 
 ```bash
-# inspect one utterance (labels, intervals, multi-resolution sanity check)
-python3 src/ps_data.py CON_D_0000000 0.16
-
-# render waveform + spectrogram with spoof regions shaded
-python3 src/ps_plot.py CON_D_0000000 0.02
+python3 src/run.py                 # full pipeline, compares feature sets
+python3 src/run.py --smooth 5      # with median smoothing
+python3 src/ps_data.py CON_D_0000000 0.16   # inspect one utterance
 ```
 
-## Method & results
+## Results (dev, simple logistic-regression baseline)
 
-Features: **LFCC**, **LFCC + Δ/ΔΔ**, **STFT spectrogram** → mean+std pooled to
-0.16 s windows aligned with the segment labels → per-window logistic regression
-predicts `P(spoof)` (localization); utterance score = max window prob (detection).
+| feature set | win-EER% | win-EER% +smooth | utt-EER% |
+|---|---:|---:|---:|
+| lfcc | 21.1 | 18.1 | 22.0 |
+| stft | 18.1 | 15.2 | 9.6 |
+| stft+phase+disc | 16.1 | 13.6 | 9.6 |
+| **full** (stft+lfcc+phase+disc) | **14.3** | **12.4** | 11.1 |
 
-```
-src/features.py       LFCC / delta-delta / STFT extraction + pooling
-src/dataset.py        sample dev utts, build window features + labels
-src/experiment.py     train per feature, report EER/AUC/F1 (run this)
-src/localize_demo.py  per-utterance localization figure
-```
-
-```bash
-python3 src/experiment.py
-```
-
-Best single feature (STFT-spec) reaches **utterance EER 9.4 %, AUC 0.97** and
-**window EER 16.9 %** on a held-out dev sample. Full table, methodology and
-caveats in **[RESULTS.md](RESULTS.md)**.
+Phase + discontinuity add to STFT (localization), and median smoothing helps
+further. Detection (utterance) is best with STFT. Still a simple-regression
+baseline; next: official **Range-EER**, finer resolution, LightGBM/CNN.
+See **[RESULTS.md](RESULTS.md)**.
