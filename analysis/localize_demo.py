@@ -16,27 +16,28 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from sklearn.linear_model import LogisticRegression
-from sklearn.preprocessing import StandardScaler
-from sklearn.pipeline import make_pipeline
 from sklearn.model_selection import GroupShuffleSplit
 
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", "src"))
 import ps_data as P
-import dataset as D
+import pipeline as D
 import features as F
-from experiment import eer
+import model as MD
+from evaluate import eer
 
 
-def main(feat="stft", uid=None, R=0.16, seed=0):
+def main(feat="stft+phase+disc", uid=None, R=0.16, seed=0):
+    grps = MD.FEATURE_SETS[feat]
     uids = D.sample_uids(R, 500, 750, 250, seed=seed)
     X, y, groups, _ = D.build(uids, R=R, cache=True)
     gss = GroupShuffleSplit(n_splits=1, test_size=0.3, random_state=seed)
     tr, te = next(gss.split(np.zeros(len(y)), y, groups))
 
-    clf = make_pipeline(StandardScaler(),
-                        LogisticRegression(max_iter=2000, class_weight="balanced"))
-    clf.fit(X[feat][tr], y[tr])
-    thr = eer(y[te], clf.predict_proba(X[feat][te])[:, 1])[1]
+    Xtr = MD.compose({g: X[g][tr] for g in grps}, grps)
+    Xte = MD.compose({g: X[g][te] for g in grps}, grps)
+    s, clf = MD.fit_predict(Xtr, y[tr], Xte)
+    thr = eer(y[te], s)[1]
 
     # pick a test partial-spoof utterance if not given
     test_groups = np.unique(groups[te])
@@ -56,7 +57,8 @@ def main(feat="stft", uid=None, R=0.16, seed=0):
     dur = len(audio) / sr
     labs = seg[uid]
     n = len(labs)
-    prob = clf.predict_proba(F.extract_all(audio.astype(np.float32), n, R=R)[feat])[:, 1]
+    feats_u = F.group_features(audio.astype(np.float32), n, R=R, groups=grps)
+    prob = clf.predict_proba(MD.compose(feats_u, grps))[:, 1]
     gt_spoof = (np.asarray(labs) == "0").astype(int)
     t = (np.arange(n) + 0.5) * R
 
@@ -78,7 +80,7 @@ def main(feat="stft", uid=None, R=0.16, seed=0):
 
     figdir = os.path.join(P.REPO, "figures")
     os.makedirs(figdir, exist_ok=True)
-    out = os.path.join(figdir, f"localize_{feat}_{uid}.png")
+    out = os.path.join(figdir, f"localize_{feat.replace('+','-')}_{uid}.png")
     fig.tight_layout(); fig.savefig(out, dpi=110)
     print("saved:", out)
     return out

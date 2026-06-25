@@ -10,15 +10,15 @@ Splits utterance detection (score = max window P(spoof)) into:
 Run:  python3 src/detect_breakdown.py
 """
 import numpy as np
-from sklearn.linear_model import LogisticRegression
-from sklearn.preprocessing import StandardScaler
-from sklearn.pipeline import make_pipeline
 from sklearn.model_selection import GroupShuffleSplit
 from sklearn.metrics import roc_auc_score
 
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", "src"))
 import ps_data as P
-import dataset as D
-from experiment import eer, FEATURES, PRETTY
+import pipeline as D
+import model as MD
+from evaluate import eer
 
 
 def main(R=0.16, seed=0):
@@ -47,11 +47,10 @@ def main(R=0.16, seed=0):
     sub = f"{'':<11} | {'EER%  AUC':>12} | {'EER%   AUC':>13} | {'EER%    AUC':>15}"
     print(hdr); print(sub); print("-" * len(hdr))
 
-    for feat in FEATURES:
-        clf = make_pipeline(StandardScaler(),
-                            LogisticRegression(max_iter=2000, class_weight="balanced"))
-        clf.fit(X[feat][tr], y[tr])
-        s = clf.predict_proba(X[feat][te])[:, 1]
+    for feat, grps in MD.FEATURE_SETS.items():
+        Xtr = MD.compose({g: X[g][tr] for g in grps}, grps)
+        Xte = MD.compose({g: X[g][te] for g in grps}, grps)
+        s, _ = MD.fit_predict(Xtr, y[tr], Xte)
         uscore = {g: s[g_te == g].max() for g in test_utts}
 
         def pair(pos_type):
@@ -68,7 +67,7 @@ def main(R=0.16, seed=0):
         eA, aA = eer(y_all, s_all)[0], roc_auc_score(y_all, s_all)
         eF, aF = pair(2)
         eP, aP = pair(1)
-        print(f"{PRETTY[feat]:<11} | {eA:5.1f} {aA:5.3f} | {eF:5.1f} {aF:5.3f}  | "
+        print(f"{feat:<11} | {eA:5.1f} {aA:5.3f} | {eF:5.1f} {aF:5.3f}  | "
               f"{eP:5.1f}  {aP:5.3f}")
 
     print("\nbona-vs-PARTIAL is the realistic threat; bona-vs-FULL is the easy case.")
