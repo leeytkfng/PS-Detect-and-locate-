@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
-"""End-to-end PartialSpoof DSP pipeline  [1]->[7].
+"""PartialSpoof DSP 파이프라인 전체 실행  [1]->[7].
 
-[1] load dev utterances        (pipeline.sample_uids)
-[2][3][4] frame -> DSP features -> window pooling   (pipeline.build / features)
-[5][6] light classifier -> window P(spoof) -> detection by max pool   (model)
-[7] median smoothing + evaluation (EER)            (model / evaluate)
+[1] dev 발화 로드               (pipeline.sample_uids)
+[2][3][4] 프레임 -> DSP 특징 -> 윈도우 풀링   (pipeline.build / features)
+[5][6] 경량 분류기 -> 윈도우 P(가짜) -> max 풀링 탐지   (model)
+[7] median 스무딩 + 평가(EER)   (model / evaluate)
 
-Compares feature sets and reports localization (window) + detection (utt) EER,
-with and without post-processing.
+특징 조합을 비교하고 국소화(윈도우)·탐지(발화) EER을 후처리 전/후로 출력한다.
 
-Run:  python3 src/run.py [--backend logreg|lgbm] [--R 0.16] [--smooth 5]
+실행:  python3 src/run.py [--backend logreg|lgbm] [--R 0.16] [--smooth 5]
 """
 import argparse
 import numpy as np
@@ -23,7 +22,7 @@ import evaluate as E
 def run(R=0.16, seed=0, backend="logreg", smooth=5,
         n_bona=500, n_partial=750, n_full=250):
     uids = PL.sample_uids(R, n_bona, n_partial, n_full, seed=seed)
-    X, y, groups, _ = PL.build(uids, R=R)               # per-group features
+    X, y, groups, _ = PL.build(uids, R=R)               # 그룹별 특징
     bona, part, full = PL.categorize(uids, R)
     print(f"# PartialSpoof DSP pipeline | R={R}s backend={backend} smooth={smooth}")
     print(f"  utts={len(uids)} (bona={len(bona)} partial={len(part)} full={len(full)})"

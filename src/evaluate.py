@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
-"""[7] Evaluation metrics.
+"""[7] 평가 지표.
 
-  eer(y, scores)        -> Equal Error Rate (%) + threshold
-  window_metrics(...)   -> localization: EER / AUC / F1 / balanced-acc
-  utt_metrics(...)      -> detection: utterance EER / AUC (score = max pooling)
+  eer(y, scores)        -> 동일오류율 EER(%) + 임계값
+  window_metrics(...)   -> 국소화: EER / AUC / F1 / 균형정확도
+  utt_metrics(...)      -> 탐지: 발화 EER / AUC (점수 = max 풀링)
 
-range_eer(...) is a placeholder for the official PartialSpoof Range-EER
-(metric/RangeEER.py, pyannote-based); to be wired once scores are exported in
-the score_ali format.
+range_eer(...)는 공식 PartialSpoof Range-EER(metric/RangeEER.py, pyannote 기반)
+자리표시자. score_ali 포맷으로 점수를 내보낸 뒤 연동 예정.
 """
 import numpy as np
 from sklearn.metrics import roc_curve, roc_auc_score, f1_score, balanced_accuracy_score
@@ -29,7 +28,7 @@ def window_metrics(y_true, scores):
 
 
 def utt_scores(win_scores, utt_groups):
-    """detection score per utterance = max window P(spoof)."""
+    """발화별 탐지 점수 = 윈도우 P(가짜)의 최댓값."""
     uids = np.unique(utt_groups)
     return uids, np.array([win_scores[utt_groups == u].max() for u in uids])
 

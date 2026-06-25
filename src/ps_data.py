@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""PartialSpoof (v1.2) dev-set parser / audio<->label verifier.
+"""PartialSpoof (v1.2) dev 세트 파서 / 오디오<->라벨 검증기.
 
-Dataset lives in the (git-ignored) upstream clone. Override with env PS_DATA.
-  $PS_DATA/dev/con_wav/<id>.wav            audio
-  $PS_DATA/dev/dev.lst                     list of utt ids
+데이터셋은 (git에서 제외된) upstream 클론 안에 있다. 환경변수 PS_DATA로 경로 변경 가능.
+  $PS_DATA/dev/con_wav/<id>.wav            오디오
+  $PS_DATA/dev/dev.lst                     발화 id 목록
   $PS_DATA/protocols/PartialSpoof_LA_cm_protocols/PartialSpoof.LA.cm.dev.trl.txt
-  $PS_DATA/segment_labels/dev_seglab_<res>.npy   {id: np.array([per-frame '0'/'1'])}
+  $PS_DATA/segment_labels/dev_seglab_<res>.npy   {id: np.array([프레임별 '0'/'1'])}
 
-Label convention (verified): '1' = bonafide, '0' = spoof.
-  LA_D_*  = original genuine ASVspoof2019 utterance  -> all '1'
-  CON_D_* = concatenated utterance                   -> may be partially spoofed
+라벨 규약 (검증 완료): '1' = bonafide(진짜), '0' = spoof(가짜).
+  LA_D_*  = 원본 진짜 ASVspoof2019 발화        -> 전부 '1'
+  CON_D_* = 이어붙인(concatenated) 발화        -> 일부만 가짜일 수 있음
 """
 import os, sys
 import numpy as np
@@ -31,7 +31,7 @@ RESOLUTIONS = [0.01, 0.02, 0.04, 0.08, 0.16, 0.32, 0.64]
 
 
 def load_protocol():
-    """utt_id -> (speaker, system, utt_label)"""
+    """발화id -> (화자, 시스템, 발화라벨)"""
     out = {}
     with open(PROTO) as f:
         for line in f:
@@ -46,7 +46,7 @@ def load_seglab(res):
 
 
 def frames_to_intervals(frames, res):
-    """['1','0','0','1'] -> [(start_s, end_s, 'label'), ...] (run-length)."""
+    """['1','0','0','1'] -> [(시작초, 끝초, '라벨'), ...] (런-렝스 압축)."""
     out, i, n = [], 0, len(frames)
     while i < n:
         j = i
@@ -82,7 +82,7 @@ def describe(uid, res=0.16):
 
 
 def crossres_check(uid):
-    """frame count at each resolution should track duration."""
+    """각 해상도의 프레임 수가 길이(duration)와 일치하는지 확인."""
     wav_path = os.path.join(WAV, uid + ".wav")
     info = sf.info(wav_path)
     dur = info.frames / info.samplerate

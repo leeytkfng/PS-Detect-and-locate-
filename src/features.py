@@ -1,43 +1,42 @@
 #!/usr/bin/env python3
-"""[2][3][4] Framing + DSP feature extraction + window pooling.
+"""[2][3][4] 프레이밍 + DSP 특징 추출 + 윈도우 풀링.
 
-Frame analysis: 25 ms window / 10 ms hop @ 16 kHz (n_fft=512, win=400).
+프레임 분석: 25 ms 윈도우 / 10 ms 홉 @ 16 kHz (n_fft=512, win=400).
 
-Feature GROUPS (each a per-frame sequence, then pooled to label windows):
-  magnitude  -> STFT log-magnitude  (group "stft")
-                LFCC + d + dd        (group "lfcc")
-  phase      -> per-band IF-deviation + temporal phase flux   (group "phase")
-  disc       -> per-band spectral flux + log-energy d1/d2     (group "disc")
+특징 GROUP (각각 프레임별 시퀀스를 만든 뒤 라벨 윈도우로 풀링):
+  magnitude(크기) -> STFT 로그 크기   (그룹 "stft")
+                     LFCC + d + dd     (그룹 "lfcc")
+  phase(위상)     -> 밴드별 순간주파수 편차 + 시간 위상 flux   (그룹 "phase")
+  disc(불연속)    -> 밴드별 스펙트럼 flux + 로그에너지 d1/d2   (그룹 "disc")
 
-Why: the spoof segment is the SAME speaker spliced in, so speaker cues are
-useless. magnitude catches vocoder spectral texture; phase catches vocoder
-phase incoherence; disc catches the concatenation-seam discontinuity. The seam
-is sparse (a few frames), so we pool with mean + std + MAX -- max preserves the
-peak discontinuity inside a window.
+이유: 가짜 구간은 '같은 화자'를 잘라 붙인 것이라 화자 단서는 무용지물이다.
+크기는 보코더의 스펙트럼 질감을, 위상은 보코더의 위상 부정합을, 불연속은
+이어붙인 이음새(seam)의 불연속을 잡는다. 이음새는 sparse(몇 프레임뿐)하므로
+mean + std + MAX 로 풀링한다 -- max가 윈도우 내부의 불연속 peak를 보존한다.
 """
 import numpy as np
 import librosa
 from scipy.fftpack import dct
 
 SR        = 16000
-WIN       = 400          # 25 ms analysis window
-N_FFT     = 512          # fft size (zero-padded)
-HOP       = 160          # 10 ms hop
-N_FILTERS = 40           # linear filterbank channels (LFCC)
-N_CEPS    = 20           # cepstral coefficients
-N_BANDS   = 16           # bands for phase/disc grouping
+WIN       = 400          # 25 ms 분석 윈도우
+N_FFT     = 512          # fft 크기 (제로 패딩)
+HOP       = 160          # 10 ms 홉
+N_FILTERS = 40           # 선형 필터뱅크 채널 수 (LFCC)
+N_CEPS    = 20           # 켑스트럼 계수 개수
+N_BANDS   = 16           # phase/disc 밴드 묶음 개수
 POOL_STATS = ("mean", "std", "max")
 
 GROUPS = ("stft", "lfcc", "phase", "disc")
 
 
-# ----------------------------------------------------------- shared STFT
+# ----------------------------------------------------------- 공용 STFT
 def stft_complex(audio):
     return librosa.stft(audio, n_fft=N_FFT, win_length=WIN, hop_length=HOP,
                         window="hann", center=True)
 
 
-# ----------------------------------------------------------- magnitude group
+# ----------------------------------------------------------- magnitude(크기) 그룹
 def _linear_filterbank(n_filters=N_FILTERS, n_fft=N_FFT, sr=SR):
     n_bins = n_fft // 2 + 1
     edges = np.linspace(0, sr / 2, n_filters + 2)
@@ -71,7 +70,7 @@ def logmag_seq(audio):
     return np.log(np.abs(stft_complex(audio)) + 1e-10).T.astype(np.float32)
 
 
-# ----------------------------------------------------------- band helpers
+# ----------------------------------------------------------- 밴드 헬퍼
 def _band_matrix(n_bands=N_BANDS, n_bins=N_FFT // 2 + 1):
     edges = np.linspace(0, n_bins, n_bands + 1).astype(int)
     M = np.zeros((n_bands, n_bins), np.float32)
@@ -88,9 +87,9 @@ def _princarg(x):
     return np.mod(x + np.pi, 2 * np.pi) - np.pi
 
 
-# ----------------------------------------------------------- phase group
+# ----------------------------------------------------------- phase(위상) 그룹
 def phase_seq(audio):
-    """(T, 2*N_BANDS): per-band magnitude-weighted IF-deviation + phase flux."""
+    """(T, 2*N_BANDS): 밴드별 크기 가중 순간주파수 편차 + 위상 flux."""
     S = stft_complex(audio)
     mag = np.abs(S) + 1e-10
     phase = np.angle(S)
@@ -107,9 +106,9 @@ def phase_seq(audio):
     return np.vstack([seq[:1], seq]).astype(np.float32)
 
 
-# ----------------------------------------------------------- disc group
+# ----------------------------------------------------------- disc(불연속) 그룹
 def disc_seq(audio):
-    """(T, N_BANDS+2): per-band spectral flux + |log-energy d1| + |d2|."""
+    """(T, N_BANDS+2): 밴드별 스펙트럼 flux + |로그에너지 d1| + |d2|."""
     S = np.abs(stft_complex(audio))
     Sn = S / (S.sum(axis=0, keepdims=True) + 1e-10)
     flux_b = (_BM @ np.abs(np.diff(Sn, axis=1))).T
@@ -126,11 +125,11 @@ _SEQ_FN = {"stft": logmag_seq,
            "disc": disc_seq}
 
 
-# ----------------------------------------------------------- [4] pooling
+# ----------------------------------------------------------- [4] 풀링
 def pool_to_windows(seq, n_windows, hop=HOP, sr=SR, R=0.16, stats=POOL_STATS):
-    """Pool a (T, d) frame sequence into (n_windows, len(stats)*d).
+    """(T, d) 프레임 시퀀스를 (n_windows, len(stats)*d)로 풀링.
 
-    Frame i (center=True) is at time i*hop/sr -> window floor(time/R).
+    프레임 i(center=True)는 시각 i*hop/sr -> 윈도우 floor(time/R)에 속함.
     """
     T, d = seq.shape
     widx = np.floor(np.arange(T) * hop / sr / R).astype(int)
@@ -151,7 +150,7 @@ def pool_to_windows(seq, n_windows, hop=HOP, sr=SR, R=0.16, stats=POOL_STATS):
 
 
 def group_features(audio, n_windows, R=0.16, groups=GROUPS, stats=POOL_STATS):
-    """-> dict{group: (n_windows, *)} pooled features."""
+    """-> dict{그룹: (n_windows, *)} 풀링된 특징."""
     return {g: pool_to_windows(_SEQ_FN[g](audio), n_windows, R=R, stats=stats)
             for g in groups}
 

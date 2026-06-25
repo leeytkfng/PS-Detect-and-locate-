@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""[5][6][7] Classifier + detection pooling + post-processing.
+"""[5][6][7] 분류기 + 탐지 풀링 + 후처리.
 
-A light window-level classifier predicts P(spoof). Backends:
-  - "logreg"   : StandardScaler + LogisticRegression (default, fast baseline)
-  - "lgbm"     : LightGBM if installed (stronger, optional)
+윈도우 단위 경량 분류기가 P(가짜)를 예측한다. 백엔드:
+  - "logreg" : StandardScaler + LogisticRegression (기본, 빠른 베이스라인)
+  - "lgbm"   : LightGBM 설치 시 사용 (더 강력, 선택)
 
-  localization = per-window P(spoof) sequence
-  detection    = max over an utterance's windows
-  post-process = per-utterance median smoothing of the score sequence
+  국소화 = 윈도우별 P(가짜) 시퀀스
+  탐지   = 발화 내 윈도우들의 최댓값
+  후처리 = 발화별 점수 시퀀스에 median(중앙값) 스무딩
 """
 import numpy as np
 from sklearn.preprocessing import StandardScaler
@@ -15,7 +15,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import make_pipeline
 
 
-# canonical feature sets (combinations of pipeline groups)
+# 대표 특징 조합 (pipeline 그룹들의 조합)
 FEATURE_SETS = {
     "lfcc":            ["lfcc"],
     "stft":            ["stft"],
@@ -37,7 +37,7 @@ def make_clf(backend="logreg"):
                                   subsample=0.8, colsample_bytree=0.8,
                                   verbosity=-1)
         except Exception:
-            pass  # fall back silently
+            pass  # 실패하면 조용히 logreg로 폴백
     return make_pipeline(
         StandardScaler(),
         LogisticRegression(max_iter=3000, class_weight="balanced"))
@@ -50,7 +50,7 @@ def fit_predict(Xtr, ytr, Xte, backend="logreg"):
 
 
 def median_smooth(scores, utt_groups, k=5):
-    """per-utterance median filter on the window-score sequence (post-proc)."""
+    """발화별 윈도우 점수 시퀀스에 median 필터 적용 (후처리)."""
     if k < 3 or k % 2 == 0:
         return scores
     out = scores.copy()

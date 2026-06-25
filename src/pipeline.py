@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-"""[1][2][4] Data sampling + window-level dataset construction.
+"""[1][2][4] 데이터 샘플링 + 윈도우 단위 데이터셋 구성.
 
-Builds, for a set of dev utterances, per-group pooled features aligned 1:1 with
-the segment labels at resolution R, plus window labels and the originating
-utterance index (for utterance-aware splitting and detection scoring).
+dev 발화 집합에 대해, 해상도 R의 세그먼트 라벨과 1:1로 정렬된 그룹별 풀링 특징,
+윈도우 라벨, 그리고 원본 발화 인덱스(발화 단위 분할/탐지 점수용)를 만든다.
 
-Label convention flip: ground-truth frame '0' (spoof) -> y=1 (positive=spoof).
+라벨 규약 뒤집기: 정답 프레임 '0'(가짜) -> y=1 (양성=가짜).
 """
 import os, hashlib
 import numpy as np
@@ -47,7 +46,7 @@ def sample_uids(R, n_bona=500, n_partial=750, n_full=250, seed=0):
 
 
 def build(uids, R=0.16, groups=F.GROUPS, stats=F.POOL_STATS, cache=True):
-    """-> (dict{group: X}, y, utt_groups, uids)."""
+    """-> (dict{그룹: X}, y, 발화그룹, uids)."""
     key = hashlib.md5(("v2|" + "|".join(uids) + f"|{R}|{','.join(groups)}|"
                        f"{','.join(stats)}").encode()).hexdigest()[:12]
     path = os.path.join(CACHE, f"win_{R}_{key}.npz")
