@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Build a PDF progress report (Korean) summarizing the work so far.
+"""지금까지의 작업을 정리한 PDF 진행 보고서(한국어)를 생성.
 
-Scope note: this documents a SIMPLE LOGISTIC-REGRESSION baseline on DSP features
--- it is NOT yet a dedicated DSP/deep model. Includes explanations of the DSP
-measurements (RMS/ZCR/centroid/flux) and the standard PartialSpoof metrics
-(Utterance/Segment/Range EER).
+범위 주의: 본 보고서는 DSP 특징 위의 '단순 로지스틱 회귀' 베이스라인을 다룬다
+-- 아직 전용 DSP/딥러닝 모델이 아니다. DSP 측정값(RMS/ZCR/centroid/flux)과
+표준 PartialSpoof 지표(Utterance/Segment/Range EER) 설명을 포함한다.
 
-Run:  python3 src/make_report.py
-Output: report/PartialSpoof_DSP_report.pdf
+실행:  python3 src/make_report.py
+출력: report/PartialSpoof_DSP_report.pdf
 """
 import os
 from fpdf import FPDF
@@ -32,17 +31,17 @@ class Report(FPDF):
         self.set_auto_page_break(True, margin=16)
         self.set_margins(16, 16, 16)
         self.add_font("Nanum", "", FONT)
-        self.add_font("Nanum", "B", FONT)   # only regular available; size/colour = emphasis
+        self.add_font("Nanum", "B", FONT)   # Regular만 있음; 크기/색으로 강조 대체
         self.set_font("Nanum", size=10.5)
 
-    # ---- footer with page number ----
+    # ---- 쪽번호 푸터 ----
     def footer(self):
         self.set_y(-12)
         self.set_font("Nanum", size=8)
         self.set_text_color(*MUTE)
         self.cell(0, 8, f"PartialSpoof DSP baseline - p.{self.page_no()}", align="C")
 
-    # ---- building blocks ----
+    # ---- 빌딩 블록 ----
     def h1(self, n, t):
         self.ln(2)
         self.set_text_color(*ACCENT)
@@ -91,13 +90,13 @@ class Report(FPDF):
         ncol = len(header)
         widths = widths or [usable / ncol] * ncol
         align = align or ["C"] * ncol
-        # header
+        # 헤더
         self.set_fill_color(*ACCENT)
         self.set_text_color(255, 255, 255)
         for w, hh in zip(widths, header):
             self.cell(w, 7, hh, border=0, align="C", fill=True)
         self.ln()
-        # rows
+        # 행
         self.set_text_color(*INK)
         for i, r in enumerate(rows):
             self.set_fill_color(*( (255,255,255) if i % 2 else (238,242,246) ))
@@ -124,7 +123,7 @@ class Report(FPDF):
 def build():
     pdf = Report()
 
-    # ============ COVER ============
+    # ============ 표지 ============
     pdf.add_page()
     pdf.ln(28)
     pdf.set_text_color(*ACCENT)
