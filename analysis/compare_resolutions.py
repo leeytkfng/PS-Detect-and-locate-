@@ -30,7 +30,7 @@ def utype(arr):
     return "bonafide" if s == {"1"} else ("full" if s == {"0"} else "partial")
 
 
-# ----------------------------------------------------------- (A) statistics
+# ----------------------------------------------------------- (A) 통계 표
 def stats_table():
     # 해상도당 한 번씩 로드; 타입 분류는 0.01(가장 고움) 라벨 기준
     fine = P.load_seglab(0.01)
@@ -48,7 +48,7 @@ def stats_table():
         agg = {t: [[], []] for t in ("bonafide", "partial", "full")}  # [ratios],[bounds]
         for u, a in d.items():
             t = types[u]
-            v = (a == "0").astype(int)        # 1 = spoof frame
+            v = (a == "0").astype(int)        # 1 = 가짜 프레임
             agg[t][0].append(v.mean())
             agg[t][1].append(int(np.abs(np.diff(v)).sum()))   # 전환 횟수
         cells = []
@@ -60,7 +60,7 @@ def stats_table():
     print("\n  (ratio = fraction of frames labeled spoof; #boundaries = bonafide<->spoof switches)")
 
 
-# ----------------------------------------------------------- (B) figure
+# ----------------------------------------------------------- (B) 그림
 def strip_figure(uid, out):
     audio, sr = sf.read(os.path.join(P.WAV, uid + ".wav"))
     if audio.ndim > 1:
