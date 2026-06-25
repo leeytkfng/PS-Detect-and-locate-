@@ -1,0 +1,8 @@
+# DSP-cue contrast over 300 partial-spoof utts (R=0.02s, 10 ms frames)
+  measure        bonafide      spoof   delta%
+  rms               0.024      0.015   -36.7%
+  zcr               0.147      0.120   -18.1%
+  centroid       1810.166   1707.504    -5.7%
+  flux              0.077      0.082     6.9%
+
+  (spoof frames vs bonafide frames; flux up + energy down = the 'awkwardness' signal)
