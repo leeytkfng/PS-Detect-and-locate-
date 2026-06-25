@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
-"""Compare segment labels across the 6 time resolutions, per utterance type.
+"""세그먼트 라벨을 6개 시간 해상도 × 발화 타입별로 비교.
 
-Outputs:
-  (A) a dataset-wide table: for bonafide / partial / full utterances, the mean
-      spoof-frame ratio and mean #boundaries at each resolution.
-  (B) one figure per type: spectrogram + stacked label strips (one per
-      resolution), green=bonafide, red=spoof, so you can see how coarse vs fine
-      resolution snaps the spoof boundaries.
+출력:
+  (A) 데이터셋 전체 표: bonafide/부분가짜/완전가짜 발화에 대해 해상도별
+      평균 가짜-프레임 비율과 평균 경계(boundary) 개수.
+  (B) 타입별 그림 1장: 스펙트로그램 + 해상도별 라벨 띠(초록=진짜, 빨강=가짜).
+      거친 해상도일수록 가짜 경계가 어떻게 스냅되는지 눈으로 확인.
 
-Run:  python3 src/compare_resolutions.py
+실행:  python3 analysis/compare_resolutions.py
 """
 import os
 import numpy as np
@@ -22,7 +21,7 @@ import os as _os, sys as _sys
 _sys.path.insert(0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", "src"))
 import ps_data as P
 
-RES = [0.64, 0.32, 0.16, 0.08, 0.04, 0.02, 0.01]   # coarse -> fine
+RES = [0.64, 0.32, 0.16, 0.08, 0.04, 0.02, 0.01]   # 거침 -> 고움
 CMAP = ListedColormap(["#2ca02c", "#d62728"])       # 0=bonafide green, 1=spoof red
 
 
@@ -33,7 +32,7 @@ def utype(arr):
 
 # ----------------------------------------------------------- (A) statistics
 def stats_table():
-    # use a single load per resolution; categorize by the 0.01 (finest) labels
+    # 해상도당 한 번씩 로드; 타입 분류는 0.01(가장 고움) 라벨 기준
     fine = P.load_seglab(0.01)
     types = {u: utype(a) for u, a in fine.items()}
     counts = {t: sum(v == t for v in types.values()) for t in ("bonafide", "partial", "full")}
@@ -51,7 +50,7 @@ def stats_table():
             t = types[u]
             v = (a == "0").astype(int)        # 1 = spoof frame
             agg[t][0].append(v.mean())
-            agg[t][1].append(int(np.abs(np.diff(v)).sum()))   # transitions
+            agg[t][1].append(int(np.abs(np.diff(v)).sum()))   # 전환 횟수
         cells = []
         for t in ("bonafide", "partial", "full"):
             ratio = np.mean(agg[t][0]) if agg[t][0] else float("nan")

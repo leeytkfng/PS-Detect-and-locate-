@@ -1,17 +1,15 @@
 #!/usr/bin/env python3
-"""Show that the 'awkwardness' of an inserted TTS/VC segment is measurable with
-classic DSP, especially at the concatenation seam.
+"""삽입된 TTS/VC 구간의 '어색함'이 고전 DSP로, 특히 이음새에서 측정 가능함을 보인다.
 
-For one utterance we compute, frame by frame (10 ms):
-  - short-time energy (RMS)
-  - zero-crossing rate (ZCR)
-  - spectral centroid
-  - spectral flux  (frame-to-frame spectral change -> spikes at discontinuities)
-and overlay the ground-truth spoof span. Seams (bonafide<->spoof switches) are
-marked; spectral flux there should jump, and the spoof region's texture (flux/
-ZCR/centroid) tends to differ from the bonafide part.
+발화 하나에 대해 프레임 단위(10 ms)로 계산:
+  - 단시간 에너지 (RMS)
+  - 영교차율 (ZCR)
+  - 스펙트럼 중심 (spectral centroid)
+  - 스펙트럼 flux (프레임간 변화 -> 불연속에서 튐)
+그리고 정답 가짜 구간을 겹쳐 그린다. 이음새(진짜<->가짜 전환)를 표시하며,
+거기서 flux가 튀고, 가짜 구간의 질감(flux/ZCR/centroid)이 진짜와 다른 경향.
 
-Run:  python3 src/seam_analysis.py [uid] [resolution]
+실행:  python3 analysis/seam_analysis.py [uid] [해상도]
 """
 import os, sys
 import numpy as np
@@ -34,7 +32,7 @@ def dsp_curves(audio, sr):
     zcr = librosa.feature.zero_crossing_rate(audio, frame_length=N_FFT,
                                              hop_length=HOP)[0]
     cen = librosa.feature.spectral_centroid(S=S, sr=sr)[0]
-    Sn = S / (S.sum(axis=0, keepdims=True) + 1e-10)                  # normalize per frame
+    Sn = S / (S.sum(axis=0, keepdims=True) + 1e-10)                  # 프레임별 정규화
     flux = np.sqrt(((np.diff(Sn, axis=1)) ** 2).sum(axis=0))        # (T-1,)
     flux = np.concatenate([[0.0], flux])
     t = np.arange(S.shape[1]) * HOP / sr
@@ -49,7 +47,7 @@ def main(uid="CON_D_0000000", R=0.02):
     dur = len(audio) / sr
     labs = P.load_seglab(R)[uid].tolist()
     intervals = P.frames_to_intervals(labs, R)
-    seams = [s for s, _, _ in intervals[1:]]      # interior boundaries
+    seams = [s for s, _, _ in intervals[1:]]      # 내부 경계(이음새)
 
     t, rms, zcr, cen, flux = dsp_curves(audio, sr)
 
@@ -78,7 +76,7 @@ def main(uid="CON_D_0000000", R=0.02):
         ax.set_xlim(0, dur)
     axes[-1].set_xlabel("time (s)")
 
-    # quick numeric contrast: spoof vs bonafide frame means
+    # 간단 수치 대비: 가짜 vs 진짜 프레임 평균
     fr_t = t
     is_spoof = np.zeros(len(fr_t), bool)
     for s, e, lab in intervals:

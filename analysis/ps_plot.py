@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Plot waveform + spectrogram for a PartialSpoof utterance, shading spoof spans
-(from segment_labels) so the audio<->label match is visible by eye."""
+"""PartialSpoof 발화의 파형 + 스펙트로그램을 그리고, (segment_labels의) 가짜
+구간을 음영 처리하여 오디오<->라벨 매칭을 눈으로 확인한다."""
 import os, sys
 import numpy as np
 import soundfile as sf

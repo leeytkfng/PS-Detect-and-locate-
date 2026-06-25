@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
-"""Visualize spoof *localization* on a held-out partial-spoof utterance.
+"""홀드아웃 부분가짜 발화에서 가짜 *국소화(localization)*를 시각화.
 
-Trains the best feature (STFT log-mag, configurable) on the train split, then
-for one test utterance overlays:
-  - the spectrogram,
-  - ground-truth spoof spans (red shaded),
-  - the model's per-window P(spoof) with its decision threshold.
+train 분할로 특징 조합을 학습한 뒤, 테스트 발화 하나에 대해 겹쳐 그린다:
+  - 스펙트로그램,
+  - 정답 가짜 구간(빨강 음영),
+  - 모델의 윈도우별 P(가짜)와 결정 임계값.
 
-Run:  python3 src/localize_demo.py [feature] [uid]
+실행:  python3 analysis/localize_demo.py [feature] [uid]
 """
 import os, sys
 import numpy as np
@@ -39,14 +38,14 @@ def main(feat="stft+phase+disc", uid=None, R=0.16, seed=0):
     s, clf = MD.fit_predict(Xtr, y[tr], Xte)
     thr = eer(y[te], s)[1]
 
-    # pick a test partial-spoof utterance if not given
+    # uid 미지정 시 테스트셋에서 부분가짜 발화 하나 선택
     test_groups = np.unique(groups[te])
     seg = P.load_seglab(R)
     if uid is None:
         for g in test_groups:
             u = uids[g]
             s = set(seg[u].tolist())
-            if len(s) > 1:                       # partial spoof
+            if len(s) > 1:                       # 부분가짜
                 uid = u
                 break
     print(f"feature={feat}  uid={uid}  threshold={thr:.3f}")

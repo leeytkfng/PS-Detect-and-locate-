@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
-"""Aggregate DSP-cue contrast (bonafide vs spoof frames) over many partial-spoof
-utterances, so the seam/segment 'awkwardness' is shown statistically, not just
-on a single example.
+"""여러 부분가짜 발화에 대해 DSP 단서 대비(진짜 vs 가짜 프레임)를 집계하여,
+이음새/구간의 '어색함'을 한 예시가 아니라 통계적으로 보여준다.
 
-For N sampled partial-spoof utterances we compute per 10 ms frame:
-  RMS energy, zero-crossing rate, spectral centroid, spectral flux,
-then average each measure separately over bonafide frames and spoof frames.
+N개 부분가짜 발화에서 10 ms 프레임마다 계산:
+  RMS 에너지, 영교차율(ZCR), 스펙트럼 중심, 스펙트럼 flux,
+그 후 진짜 프레임과 가짜 프레임에서 각각 평균을 낸다.
 
-Run:  python3 src/seam_aggregate.py [N] [resolution]
+실행:  python3 analysis/seam_aggregate.py [N] [해상도]
 """
 import os, sys
 import numpy as np
@@ -36,7 +35,7 @@ def frame_curves(audio, sr):
 
 
 def run(n=300, R=0.02, seed=1):
-    uids = D.sample_uids(R, 0, n, 0, seed=seed)        # n partial-spoof utts
+    uids = D.sample_uids(R, 0, n, 0, seed=seed)        # 부분가짜 발화 n개
     seg = P.load_seglab(R)
     acc = {k: [[], []] for k in MEASURES}              # [bonafide], [spoof]
 

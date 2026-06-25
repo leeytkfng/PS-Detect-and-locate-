@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Honest detection breakdown: is utterance-level detection actually good, or
-just inflated by easy fully-spoofed utterances?
+"""정직한 탐지 분해: 발화 단위 탐지가 정말 좋은가, 아니면 쉬운 완전가짜
+발화 덕에 부풀려진 것인가?
 
-Splits utterance detection (score = max window P(spoof)) into:
-  - bonafide vs ALL spoof      (headline number)
-  - bonafide vs FULL spoof     (easy case)
-  - bonafide vs PARTIAL spoof  (hard, realistic case)
+발화 탐지(점수=윈도우 P(가짜)의 max)를 세 경우로 분해:
+  - 진짜 vs 전체 가짜      (헤드라인 숫자)
+  - 진짜 vs 완전가짜       (쉬운 경우)
+  - 진짜 vs 부분가짜       (어렵고 현실적인 경우)
 
-Run:  python3 src/detect_breakdown.py
+실행:  python3 analysis/detect_breakdown.py
 """
 import numpy as np
 from sklearn.model_selection import GroupShuffleSplit
@@ -26,7 +26,7 @@ def main(R=0.16, seed=0):
     X, y, groups, _ = D.build(uids, R=R, cache=True)
     seg = P.load_seglab(R)
 
-    # per-utterance type: 0=bona, 1=partial, 2=full
+    # 발화 타입: 0=진짜, 1=부분가짜, 2=완전가짜
     def utype(u):
         s = set(seg[u].tolist())
         return 0 if s == {"1"} else (2 if s == {"0"} else 1)
