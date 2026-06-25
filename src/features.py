@@ -1,120 +1,165 @@
 #!/usr/bin/env python3
-"""DSP feature extraction for PartialSpoof spoof localization.
+"""[2][3][4] Framing + DSP feature extraction + window pooling.
 
-Three feature families (requested):
-  1. LFCC                 - Linear-Frequency Cepstral Coefficients
-  2. LFCC + d + dd        - LFCC with delta and delta-delta (temporal dynamics)
-  3. STFT spectrogram     - log-magnitude STFT (raw spectral envelope)
+Frame analysis: 25 ms window / 10 ms hop @ 16 kHz (n_fft=512, win=400).
 
-Analysis is done on short frames (default 32 ms / 10 ms hop). To produce one
-feature vector per *segment-label window* (resolution R, e.g. 0.16 s) we pool
-the short-frame features inside each window with mean+std pooling, and align the
-window count to the ground-truth segment labels.
+Feature GROUPS (each a per-frame sequence, then pooled to label windows):
+  magnitude  -> STFT log-magnitude  (group "stft")
+                LFCC + d + dd        (group "lfcc")
+  phase      -> per-band IF-deviation + temporal phase flux   (group "phase")
+  disc       -> per-band spectral flux + log-energy d1/d2     (group "disc")
 
-Why these features?
-  - LFCC uses a *linear* filterbank (unlike MFCC's mel), so it keeps high-
-    frequency detail where vocoder/synthesis artifacts of spoofed speech live.
-    It is the standard front-end for ASVspoof anti-spoofing baselines.
-  - delta / delta-delta add how the cepstrum *changes* over time, which exposes
-    the unnatural temporal smoothness of synthetic speech and the abrupt
-    discontinuities at concatenation seams.
-  - the raw log-STFT keeps the full spectro-temporal pattern (no cepstral
-    compression) as a higher-dimensional comparison baseline.
+Why: the spoof segment is the SAME speaker spliced in, so speaker cues are
+useless. magnitude catches vocoder spectral texture; phase catches vocoder
+phase incoherence; disc catches the concatenation-seam discontinuity. The seam
+is sparse (a few frames), so we pool with mean + std + MAX -- max preserves the
+peak discontinuity inside a window.
 """
 import numpy as np
 import librosa
 from scipy.fftpack import dct
 
 SR        = 16000
-N_FFT     = 512          # 32 ms @ 16 kHz
-HOP       = 160          # 10 ms
-N_FILTERS = 40           # linear filterbank channels
-N_CEPS    = 20           # cepstral coefficients kept
+WIN       = 400          # 25 ms analysis window
+N_FFT     = 512          # fft size (zero-padded)
+HOP       = 160          # 10 ms hop
+N_FILTERS = 40           # linear filterbank channels (LFCC)
+N_CEPS    = 20           # cepstral coefficients
+N_BANDS   = 16           # bands for phase/disc grouping
+POOL_STATS = ("mean", "std", "max")
+
+GROUPS = ("stft", "lfcc", "phase", "disc")
 
 
-# ---------------------------------------------------------------- filterbank
+# ----------------------------------------------------------- shared STFT
+def stft_complex(audio):
+    return librosa.stft(audio, n_fft=N_FFT, win_length=WIN, hop_length=HOP,
+                        window="hann", center=True)
+
+
+# ----------------------------------------------------------- magnitude group
 def _linear_filterbank(n_filters=N_FILTERS, n_fft=N_FFT, sr=SR):
-    """Triangular filters equally spaced in Hz (linear), shape (n_filters, n_fft/2+1)."""
     n_bins = n_fft // 2 + 1
-    f_max = sr / 2
-    # n_filters+2 edge points equally spaced 0..f_max
-    edges = np.linspace(0, f_max, n_filters + 2)
-    bin_freqs = np.linspace(0, f_max, n_bins)
-    fb = np.zeros((n_filters, n_bins), dtype=np.float32)
+    edges = np.linspace(0, sr / 2, n_filters + 2)
+    bf = np.linspace(0, sr / 2, n_bins)
+    fb = np.zeros((n_filters, n_bins), np.float32)
     for m in range(1, n_filters + 1):
         lo, ctr, hi = edges[m - 1], edges[m], edges[m + 1]
-        left  = (bin_freqs - lo) / (ctr - lo)
-        right = (hi - bin_freqs) / (hi - ctr)
-        fb[m - 1] = np.clip(np.minimum(left, right), 0, None)
+        fb[m - 1] = np.clip(np.minimum((bf - lo) / (ctr - lo),
+                                       (hi - bf) / (hi - ctr)), 0, None)
     return fb
 
 
 _FB = _linear_filterbank()
 
 
-# ---------------------------------------------------------------- base seqs
-def _stft_power(audio):
-    S = librosa.stft(audio, n_fft=N_FFT, hop_length=HOP, window="hann", center=True)
-    return (np.abs(S) ** 2).astype(np.float32)          # (n_bins, T)
-
-
 def lfcc_seq(audio):
-    """-> (T, N_CEPS) linear-frequency cepstral coefficients."""
-    P = _stft_power(audio)                                # (n_bins, T)
-    fbe = _FB @ P                                         # (n_filters, T)
-    logfbe = np.log(fbe + 1e-10)
-    ceps = dct(logfbe, type=2, axis=0, norm="ortho")[:N_CEPS]   # (N_CEPS, T)
-    return ceps.T                                         # (T, N_CEPS)
+    P = np.abs(stft_complex(audio)) ** 2
+    logfbe = np.log(_FB @ P + 1e-10)
+    return dct(logfbe, type=2, axis=0, norm="ortho")[:N_CEPS].T     # (T, N_CEPS)
 
 
 def add_deltas(seq):
-    """(T, d) -> (T, 3d) : [feat, delta, delta-delta] along time."""
-    x = seq.T                                             # (d, T)
-    d1 = librosa.feature.delta(x, order=1, width=min(9, _odd(x.shape[1])))
-    d2 = librosa.feature.delta(x, order=2, width=min(9, _odd(x.shape[1])))
-    return np.concatenate([x, d1, d2], axis=0).T         # (T, 3d)
+    x = seq.T
+    w = max(3, min(9, x.shape[1] if x.shape[1] % 2 else x.shape[1] - 1))
+    d1 = librosa.feature.delta(x, order=1, width=w)
+    d2 = librosa.feature.delta(x, order=2, width=w)
+    return np.concatenate([x, d1, d2], axis=0).T                   # (T, 3*N_CEPS)
 
 
 def logmag_seq(audio):
-    """-> (T, n_bins) log-magnitude STFT spectrogram."""
-    S = librosa.stft(audio, n_fft=N_FFT, hop_length=HOP, window="hann", center=True)
-    return np.log(np.abs(S) + 1e-10).astype(np.float32).T  # (T, n_bins)
+    return np.log(np.abs(stft_complex(audio)) + 1e-10).T.astype(np.float32)
 
 
-def _odd(n):
-    """largest odd <= n and >=3 (librosa.delta needs odd width <= T)."""
-    n = max(3, n)
-    return n if n % 2 == 1 else n - 1
+# ----------------------------------------------------------- band helpers
+def _band_matrix(n_bands=N_BANDS, n_bins=N_FFT // 2 + 1):
+    edges = np.linspace(0, n_bins, n_bands + 1).astype(int)
+    M = np.zeros((n_bands, n_bins), np.float32)
+    for b in range(n_bands):
+        lo, hi = edges[b], max(edges[b] + 1, edges[b + 1])
+        M[b, lo:hi] = 1.0 / (hi - lo)
+    return M
 
 
-# ---------------------------------------------------------------- pooling
-def pool_to_windows(seq, n_windows, hop=HOP, sr=SR, R=0.16):
-    """Mean+std pool a (T, d) short-frame sequence into (n_windows, 2d).
+_BM = _band_matrix()
 
-    Frame i (center=True) is centered at time i*hop/sr; it belongs to window
-    floor(time / R). Output is aligned/truncated to n_windows (the label count).
+
+def _princarg(x):
+    return np.mod(x + np.pi, 2 * np.pi) - np.pi
+
+
+# ----------------------------------------------------------- phase group
+def phase_seq(audio):
+    """(T, 2*N_BANDS): per-band magnitude-weighted IF-deviation + phase flux."""
+    S = stft_complex(audio)
+    mag = np.abs(S) + 1e-10
+    phase = np.angle(S)
+    n_bins = S.shape[0]
+    dphi = np.diff(phase, axis=1)
+    k = np.arange(n_bins)[:, None]
+    expected = 2 * np.pi * HOP * k / N_FFT
+    ifdev = np.abs(_princarg(dphi - expected))
+    pflux = np.abs(_princarg(dphi))
+    w = mag[:, 1:]
+    ifd_b = _BM @ (ifdev * w) / (_BM @ w + 1e-10)
+    pfl_b = _BM @ (pflux * w) / (_BM @ w + 1e-10)
+    seq = np.concatenate([ifd_b, pfl_b], axis=0).T
+    return np.vstack([seq[:1], seq]).astype(np.float32)
+
+
+# ----------------------------------------------------------- disc group
+def disc_seq(audio):
+    """(T, N_BANDS+2): per-band spectral flux + |log-energy d1| + |d2|."""
+    S = np.abs(stft_complex(audio))
+    Sn = S / (S.sum(axis=0, keepdims=True) + 1e-10)
+    flux_b = (_BM @ np.abs(np.diff(Sn, axis=1))).T
+    flux_b = np.vstack([flux_b[:1], flux_b])
+    loge = np.log((S ** 2).sum(axis=0) + 1e-10)
+    d1 = np.gradient(loge); d2 = np.gradient(d1)
+    return np.concatenate([flux_b, np.abs(d1)[:, None],
+                           np.abs(d2)[:, None]], axis=1).astype(np.float32)
+
+
+_SEQ_FN = {"stft": logmag_seq,
+           "lfcc": lambda a: add_deltas(lfcc_seq(a)),
+           "phase": phase_seq,
+           "disc": disc_seq}
+
+
+# ----------------------------------------------------------- [4] pooling
+def pool_to_windows(seq, n_windows, hop=HOP, sr=SR, R=0.16, stats=POOL_STATS):
+    """Pool a (T, d) frame sequence into (n_windows, len(stats)*d).
+
+    Frame i (center=True) is at time i*hop/sr -> window floor(time/R).
     """
     T, d = seq.shape
-    times = np.arange(T) * hop / sr
-    widx = np.floor(times / R).astype(int)
-    out = np.zeros((n_windows, 2 * d), dtype=np.float32)
-    for w in range(n_windows):
-        m = widx == w
-        if not m.any():                                  # empty tail window
-            if w > 0:
-                out[w] = out[w - 1]
+    widx = np.floor(np.arange(T) * hop / sr / R).astype(int)
+    out = np.zeros((n_windows, len(stats) * d), np.float32)
+    for wi in range(n_windows):
+        m = widx == wi
+        if not m.any():
+            if wi > 0:
+                out[wi] = out[wi - 1]
             continue
         chunk = seq[m]
-        out[w, :d]  = chunk.mean(axis=0)
-        out[w, d:]  = chunk.std(axis=0)
+        parts = []
+        for s in stats:
+            parts.append(chunk.mean(0) if s == "mean" else
+                         chunk.std(0) if s == "std" else chunk.max(0))
+        out[wi] = np.concatenate(parts)
     return out
 
 
-def extract_all(audio, n_windows, R=0.16):
-    """Return dict of the three pooled feature matrices, each (n_windows, *)."""
-    lf = lfcc_seq(audio)
-    return {
-        "lfcc":     pool_to_windows(lf,             n_windows, R=R),
-        "lfcc_dd":  pool_to_windows(add_deltas(lf), n_windows, R=R),
-        "stft":     pool_to_windows(logmag_seq(audio), n_windows, R=R),
-    }
+def group_features(audio, n_windows, R=0.16, groups=GROUPS, stats=POOL_STATS):
+    """-> dict{group: (n_windows, *)} pooled features."""
+    return {g: pool_to_windows(_SEQ_FN[g](audio), n_windows, R=R, stats=stats)
+            for g in groups}
+
+
+if __name__ == "__main__":
+    import soundfile as sf, ps_data as P
+    uid = "CON_D_0000000"
+    a, _ = sf.read(f"{P.WAV}/{uid}.wav")
+    n = len(P.load_seglab(0.16)[uid])
+    for g, v in group_features(a.astype(np.float32), n).items():
+        print(f"{g:6s} {v.shape}  nan={np.isnan(v).any()}")
