@@ -29,12 +29,16 @@ def utt_is_spoof(y, groups):
     return out
 
 
-def reer_subset(uids, groups, n, R, seed=0):
+def _aslist(x):
+    return x.tolist() if hasattr(x, "tolist") else list(x)
+
+
+def reer_subset(uids, groups, n, R, test, seed=0):
     """Range-EER용 대표 부분집합 발화 인덱스(진짜/부분/완전 고루)."""
-    seg = P.load_seglab(0.02)
+    seg = B.load_split_seglab(test, 0.02)          # split별 0.02s 정답 (dev 하드코딩 금지)
 
     def typ(u):
-        s = set(seg[u].tolist())
+        s = set(_aslist(seg[u]))
         return 0 if s == {"1"} else (2 if s == {"0"} else 1)
     by = {0: [], 1: [], 2: []}
     for g in range(groups.max() + 1):
@@ -56,11 +60,11 @@ def main(test="dev", backend="lgbm", R=0.16, smooth=5, reer_n=2000):
     print(f"  {test}: {gte.max()+1} utts / {len(yte)} win (spoof {yte.mean():.3f})\n")
 
     utt_sp = utt_is_spoof(yte, gte)
-    sub, seg002 = reer_subset(uids_te, gte, reer_n, R)
+    sub, seg002 = reer_subset(uids_te, gte, reer_n, R, test)
     sub_set = set(sub)
     ref_dur = {}
     for g in sub:
-        ref = [(a, b) for a, b, l in P.frames_to_intervals(seg002[uids_te[g]].tolist(), 0.02)
+        ref = [(a, b) for a, b, l in P.frames_to_intervals(_aslist(seg002[uids_te[g]]), 0.02)
                if l == "spoof"]
         ref_dur[g] = (ref, int((gte == g).sum()) * R)
 
