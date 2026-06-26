@@ -5,3 +5,5 @@ librosa
 scikit-learn
 matplotlib
 fpdf2
+praat-parselmouth
+pyannote.metrics

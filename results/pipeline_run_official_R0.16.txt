@@ -1,0 +1,13 @@
+# PartialSpoof DSP pipeline | R=0.16s backend=logreg smooth=5
+  utts=1500 (bona=500 partial=750 full=250)  windows=32800 spoof=0.441
+
+feature set        dim | win-EER | Utt-EER Utt-AUC | Range-EER
+--------------------------------------------------------------
+lfcc               180 |   21.11 |   21.98   0.876 |     17.31
+stft               771 |   18.11 |    9.56   0.970 |     13.96
+seam                12 |   43.49 |   44.63   0.566 |     45.31
+stft+phase+disc    921 |   16.06 |    9.56   0.963 |     12.11
+full              1101 |   14.32 |   11.07   0.952 |     11.05
+full+seam         1113 |   14.38 |   11.07   0.948 |     10.99
+
+Utt-EER = Utterance EER(탐지) | Range-EER = 공식 구간기반 EER(국소화, 0.02s 정답·median 평활 적용) | win-EER = 내부 참고치
