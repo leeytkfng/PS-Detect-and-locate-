@@ -1,84 +1,99 @@
 # Results — Partial-Spoof Detection & Localization
 
-First-pass DSP baseline comparing three feature families on the PartialSpoof
-**dev** split. Reproduce with:
+DSP features + LightGBM on PartialSpoof. Metrics: **Utterance EER** (detection),
+**Range-EER** (localization, official pyannote-based). See **[DESIGN.md](DESIGN.md)**
+for the full method.
 
-```bash
-python3 src/experiment.py            # full run (1500 utts, R=0.16s, seed=0)
-python3 src/localize_demo.py stft    # localization figure
-```
+## 1. Headline (official protocol, `full` features, LightGBM)
 
-## 1. What features, and why
+| protocol | Utt-EER | Range-EER |
+|---|---:|---:|
+| dev internal split (optimistic) | 0.84 % | 7.69 % |
+| **train → dev** (in-domain) | 2.22 % | 7.93 % |
+| **train → eval** (unseen attacks, **final**) | **13.88 %** | **24.60 %** |
 
-| feature | dim (mean+std) | what it captures | why for PS |
-|---|---|---|---|
-| **LFCC** | 40 | linear-filterbank cepstrum (20 ceps) | linear (not mel) scale keeps **high-freq** detail where vocoder/synthesis artifacts live; standard ASVspoof front-end |
-| **LFCC + Δ + ΔΔ** | 120 | LFCC + 1st/2nd time derivatives | adds **temporal dynamics** — unnatural smoothness of synthetic speech and abrupt **concatenation seams** |
-| **STFT spectrogram** | 514 | raw log-magnitude STFT (257 bins) | full spectro-temporal pattern with **no cepstral compression** (higher-dim upper baseline) |
+The three-stage drop is the honest story: optimistic → in-domain → unseen-attack
+held-out. eval uses unseen TTS/VC (ASVspoof A07–A19), so the gap is expected.
 
-Analysis frames: `n_fft=512` (32 ms), `hop=160` (10 ms). Short-frame features are
-**mean+std pooled** into 0.16 s windows aligned 1:1 with the ground-truth segment
-labels, so every window has both a feature vector and a 0/1 label.
+## 2. Feature ablation (official train → eval, LightGBM)
 
-## 2. How detection/localization works
+| feature set | dim | win-EER | Utt-EER | Range-EER |
+|---|---:|---:|---:|---:|
+| lfcc | 180 | 24.46 | 19.27 | 25.47 |
+| stft | 771 | 22.99 | 15.61 | 25.22 |
+| stft+phase+disc | 921 | 22.96 | 15.83 | 26.02 |
+| **full** | 1101 | 21.57 | **13.88** | **24.60** |
 
-- **Localization** = window-level binary classification (spoof vs bonafide).
-  One `LogisticRegression` (`class_weight="balanced"`, standardized features) per
-  feature family predicts `P(spoof)` for each 0.16 s window → a spoof probability
-  curve over time.
-- **Detection** = utterance score = **max** window `P(spoof)`; an utterance is
-  flagged spoof if any window looks spoofed.
-- **Split**: `GroupShuffleSplit` by **utterance** (70/30) → no utterance leaks
-  between train and test. Threshold taken at the EER operating point.
+`full` (magnitude + phase + discontinuity) is best across detection and
+localization. On the in-domain train→dev split the ordering is the same and the
+phase/disc additions help more clearly (Range-EER 9.78 → 8.10 → 7.93).
 
-## 3. Evaluation results
+## 3. Model: simple regression → LightGBM
 
-Dev sample: **1500 utts** (500 bonafide, 750 partial-spoof, 250 full-spoof) →
-**32,800 windows**, spoof-window rate 0.441. Test = 30 % of utts, split by id.
+| feature | model | Utt-EER (train→dev) | Range-EER |
+|---|---|---:|---:|
+| full | Logistic Regression | 12.32 | 12.81 |
+| full | **LightGBM** | **2.22** | **7.93** |
 
-| feature | dim | win-EER % | win-AUC | win-F1 | win-bAcc | utt-EER % | utt-AUC |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| LFCC | 40 | 22.36 | 0.842 | 0.756 | 0.776 | 21.31 | 0.878 |
-| LFCC+Δ+ΔΔ | 120 | 21.21 | 0.861 | 0.768 | 0.788 | 20.64 | 0.881 |
-| **STFT-spec** | 514 | **16.94** | **0.905** | **0.814** | **0.831** | **9.40** | **0.971** |
+Swapping the classifier (same features) is the single biggest gain. Tabular
+method comparison is in §6.
 
-*win-\* = localization (per 0.16 s window); utt-\* = detection (per utterance).*
+## 4. DSP cue analysis (300 partial-spoof utts, spoof vs bonafide frames)
 
-**Takeaways**
-- All three features work well above chance (EER ≪ 50 %), confirming the labels
-  and pipeline are sound.
-- Δ+ΔΔ consistently improve over plain LFCC (temporal cues matter).
-- The raw STFT spectrogram is the strongest here — utterance detection EER
-  **9.4 %**, AUC **0.97** — at the cost of much higher dimensionality.
+| measure | bonafide | spoof | Δ |
+|---|---:|---:|---:|
+| RMS energy | 0.024 | 0.015 | −36.7 % |
+| zero-crossing rate | 0.147 | 0.120 | −18.1 % |
+| spectral centroid (Hz) | 1810 | 1708 | −5.7 % |
+| spectral flux | 0.077 | 0.082 | +6.9 % |
 
-Localization example (held-out `CON_D_0000022`): predicted `P(spoof)` rises into
-the decision region exactly over the ground-truth spoof span.
-See [figures/localize_stft_CON_D_0000022.png](figures/localize_stft_CON_D_0000022.png).
+Cues exist but no single hand measure separates cleanly (5–37 %, direction varies
+per utterance) — hence a full feature vector + classifier, not a threshold.
 
-## 3b. Is detection actually good? (breakdown)
+## 5. Seam (boundary) detection (300 partial utts, ±50 ms, P/R/F1)
 
-The headline utt-EER could be inflated by *fully* spoofed utterances (trivial to
-catch). Splitting by attack type (`python3 src/detect_breakdown.py`, test set:
-146 bonafide / 221 partial / 83 full):
+| cue | F1 |
+|---|---:|
+| **phase** | **0.355 (best)** |
+| spectral novelty | 0.301 |
+| F0 (robust) | 0.127 (worst) |
 
-| feature | bona-vs-ALL EER% / AUC | bona-vs-FULL (easy) | bona-vs-PARTIAL (hard) |
-|---|---|---|---|
-| LFCC | 21.3 / 0.878 | 13.5 / 0.939 | 24.0 / 0.855 |
-| LFCC+Δ+ΔΔ | 20.6 / 0.881 | 12.2 / 0.940 | 24.2 / 0.859 |
-| **STFT-spec** | 9.4 / 0.971 | **5.8 / 0.990** | **10.7 / 0.964** |
+**Counter-intuitive finding:** F0/pitch is the *weakest* boundary cue. The
+construction joins segments with cross-correlation + overlap-add at the smoothest
+point, so the attacker effectively removed the pitch discontinuity; phase
+incoherence cannot be smoothed away and survives best. Seam features help
+localization (Range-EER, boundary-sensitive) but not window-level region
+classification (the seam is too sparse).
 
-**Verdict.** Yes, full-spoof pulls the headline down a bit — but the *realistic*
-case (bonafide vs **partial** spoof) with STFT is still **EER 10.7 %, AUC 0.964**,
-genuinely usable for a simple linear baseline. LFCC-family features are much
-weaker on partial spoof (~24 % EER) → the **STFT spectrogram is doing the real
-work**. For reference, deep SOTA reaches ~0.5–4 % utt-EER, so this is a solid
-baseline, not a finished detector. **Localization (window EER 16.9 %) is the
-weaker part and the main place to improve.**
+## 6. Tabular method comparison
 
-## 4. Limitations / next steps
+Same `full` features, official train→dev, classifier swapped (Range-EER on a
+1,044-utt subset):
 
-- Trains/tests on a **subsample of dev** split by utterance (the official `train`
-  split is not downloaded yet). Numbers are a baseline, not the paper protocol.
-- Linear classifier + mean/std pooling is deliberately simple. Likely gains:
-  finer resolution (0.02 s), GMM/LightGBM/CNN back-ends, score smoothing for
-  cleaner spans, and proper train→dev→eval evaluation.
+| method | win-EER | Utt-EER | Utt-AUC | Range-EER | train (s) |
+|---|---:|---:|---:|---:|---:|
+| logreg (linear) | 15.26 | 12.32 | 0.947 | 12.81 | 105 |
+| rf (bagging trees) | 11.64 | 4.43 | 0.987 | 11.59 | 93 |
+| mlp (shallow net) | 7.48 | 3.02 | 0.993 | **7.20** | 364 |
+| histgb (sklearn boosting) | 7.69 | 2.24 | 0.996 | 8.33 | 57 |
+| **lgbm (LightGBM)** | 7.67 | **2.22** | **0.996** | 8.04 | **30** |
+
+**LightGBM is the best choice**: best detection (2.22 %), near-best localization,
+and **fastest (30 s, ~12× faster than the MLP)**. Both boosting-tree methods
+(lgbm/histgb) clearly beat linear (logreg) and bagging (rf), confirming
+gradient boosting is the right family for these tabular DSP features. The MLP wins
+localization marginally but costs far more and loses on detection.
+
+## 7. Reliability
+
+- **Speaker leakage**: speaker-disjoint split does not hurt detection
+  (0.84 → 0.59) → not memorizing speakers (PS is same-speaker by design).
+- **Gap nature**: not sample overfitting (dev is fine at 2.22 %); it is
+  specialization to seen attacks (A01–A06) failing on unseen ones (A07–A19).
+
+## 8. Limitations / next
+
+- Closing the unseen-attack gap needs SSL features / augmentation / domain
+  generalization — out of scope for a "simple DSP model". The gap is reported
+  honestly as a finding.
+- Reproduce: `python3 src/run_full.py --test eval --backend lgbm`.

@@ -1,126 +1,153 @@
-# DESIGN — PartialSpoof DSP 탐지·국소화 설계 문서
+# DESIGN — PartialSpoof Detection & Localization with DSP
 
-> 한 줄 요약: **DSP 특징(크기/위상/불연속) + LightGBM**으로 부분 위조 음성을
-> 탐지하고 위치까지 찾는다. 평가는 공식 **Utterance EER**(탐지) /
-> **Range-EER**(국소화). 모델은 단순 로지스틱 회귀에서 **LightGBM으로 강화**됨.
+> One line: detect and localize partially-spoofed speech with **DSP features
+> (magnitude / phase / discontinuity) + LightGBM**. Evaluated with the official
+> **Utterance EER** (detection) and **Range-EER** (localization). The model was
+> upgraded from simple logistic regression to **LightGBM**.
 
 ---
 
-## 1. 과제 개요
-- **Partial Spoof(PS)**: 진짜 음성 발화 안에 TTS/VC로 만든 **짧은 가짜 구간**을 삽입·치환하는 공격. 단어/음절 하나로 의미를 뒤집음.
-- **목표**: 디지털 신호처리(DSP)로 (a) **탐지**(발화에 가짜가 있나) + (b) **국소화**(어디가 가짜냐).
-- **데이터**: PartialSpoof database v1.2 (ASVspoof2019 LA 기반).
+## 1. Task
+- **Partial Spoof (PS)**: a short TTS/VC-generated segment is inserted/substituted
+  into otherwise genuine speech — one word/syllable can flip the meaning.
+- **Goal**: use Digital Signal Processing (DSP) to (a) **detect** (does an
+  utterance contain spoof?) and (b) **localize** (which time spans are spoof?).
+- **Data**: PartialSpoof database v1.2 (built on ASVspoof2019 LA).
 
-## 2. 데이터
-- **검증**: con_wav / protocols / segment_labels 실물 확인.
-  - segment 라벨 = **.npy(프레임별 0/1, 6+1 해상도 0.01~0.64s)**, 규약 **1=진짜, 0=가짜**.
-  - dev **24,844 = 진짜 2,548(LA_D) + 가짜 22,296(CON_D)**, 네 출처 개수 일치.
-- **핵심 특성**: 가짜는 **같은 화자**의 구간을 VAD로 잘라 교차상관+overlap-add로 이어붙이고 −26dBov로 음량 정규화. → 화자/음량 단서 무력, **이음새+보코더 아티팩트**가 단서.
+## 2. Dataset
+- **Verified on disk**: con_wav / protocols / segment_labels.
+  - segment labels are **.npy (per-frame 0/1 at 6+1 resolutions 0.01–0.64 s)**,
+    convention **1 = bonafide, 0 = spoof** (NOT the text format the docs implied).
+  - dev **24,844 = 2,548 bonafide (LA_D) + 22,296 spoof (CON_D)**; all four
+    sources agree.
+- **Key property**: spoof segments are spliced from the **same speaker** (VAD-cut,
+  joined with cross-correlation + overlap-add, loudness-normalized to −26 dBov).
+  → speaker / loudness cues are useless; **seam + vocoder artifacts** are the cues.
 
-## 3. 파이프라인 (7단계)
+## 3. Pipeline (7 steps)
 ```
-[1] 오디오 16kHz
-[2] 프레이밍 25ms 윈도우 / 10ms hop (n_fft=512, Hann)
-[3] DSP 특징 (프레임별)        ← features.py
-[4] 윈도우 풀링 0.16s, mean+std+max  ← 세그먼트 라벨과 1:1 정렬 (pipeline.py)
-[5] 분류기  LogReg → LightGBM   ← model.py
-[6] 윈도우 P(가짜): 국소화=시퀀스, 탐지=max 풀링
-[7] median 평활 + 평가(Utt-EER / Range-EER)  ← model.py / evaluate.py
+[1] audio 16 kHz
+[2] framing 25 ms window / 10 ms hop (n_fft=512, Hann)
+[3] DSP features (per frame)          -> features.py
+[4] window pooling 0.16 s, mean+std+max  (1:1 with segment labels) -> pipeline.py
+[5] classifier  LogReg -> LightGBM    -> model.py
+[6] window P(spoof): localization = sequence, detection = max pooling
+[7] median smoothing + evaluation (Utt-EER / Range-EER) -> model.py / evaluate.py
 ```
-실행: `python3 src/run.py [--backend logreg|lgbm] [--smooth 5]`
+Run: `python3 src/run.py [--backend logreg|lgbm] [--smooth 5]`
 
-## 4. DSP 특징 (무엇을, 왜)
-| 그룹 | 내용 | 노리는 아티팩트 |
+## 4. DSP features (what, why)
+| group | content | targeted artifact |
 |---|---|---|
-| **magnitude** | STFT 로그크기(257), LFCC+Δ+ΔΔ(60) | 보코더 스펙트럼 질감 (선형 필터뱅크=고주파/포먼트 보존) |
-| **phase** | 순간주파수 편차 + 위상 flux (16밴드) | 보코더 위상 부정합 |
-| **disc** | 스펙트럼 flux + 로그에너지 d1/d2 | 이음새 불연속 (음량 정규화에 강건) |
-| **seam** | F0점프·유성전환·spectral novelty | 이음새(경계) 직격 |
+| **magnitude** | STFT log-magnitude (257), LFCC+Δ+ΔΔ (60) | vocoder spectral texture (linear filterbank keeps high-freq/formants) |
+| **phase** | instantaneous-frequency deviation + phase flux (16 bands) | vocoder phase incoherence |
+| **disc** | spectral flux + log-energy d1/d2 | concatenation-seam discontinuity (robust to loudness norm) |
+| **seam** | F0 jump, voicing change, spectral novelty | the seam (boundary), directly |
 
-풀링은 mean+std+**max** — 이음새는 sparse하므로 max가 윈도우 내 peak를 보존.
+Pooling uses mean+std+**max** — the seam is sparse, so max preserves the in-window peak.
 
-## 5. 모델 — 단순 회귀 → LightGBM (강화 완료)
-- **베이스라인**: `LogisticRegression`(선형) = 단순 회귀. 가능성 확인용.
-- **주모델**: **LightGBM**(Gradient Boosting, 비선형). `model.py`에 백엔드 2종을 두고 선택.
+## 5. Model — from simple regression to LightGBM (upgraded)
+- **Baseline**: `LogisticRegression` (linear) = simple regression, for feasibility.
+- **Main model**: **LightGBM** (gradient boosting, non-linear). `model.py` holds
+  several tabular backends; LightGBM is the chosen method.
   ```python
   LGBMClassifier(n_estimators=300, learning_rate=0.05, num_leaves=63,
-                 class_weight="balanced",            # 가짜/진짜 불균형 보정
-                 subsample=0.8, colsample_bytree=0.8)  # 과적합 억제
+                 class_weight="balanced",
+                 subsample=0.8, colsample_bytree=0.8)
   ```
-- **사용 방식**: 윈도우 단위 DSP 특징(예: full=1101차원)으로 fit → `predict_proba`로 윈도우별 P(가짜). 탐지=max풀링, 후처리=median 평활(파이프라인 동일, 분류기만 교체).
-- **추가 강화**: 시간맥락 ±1 이웃 윈도우 스택 → 국소화 추가 개선(아래 표).
+- **How it is used**: train on window-level DSP features (e.g. full = 1101-dim) →
+  `predict_proba` gives per-window P(spoof). Detection = max pooling, post-proc =
+  median smoothing (pipeline unchanged, classifier swapped).
+- **Extra**: ±1 neighbor-window temporal context further improves localization.
+- Window labels are ~balanced (spoof ≈ 0.5), so class weighting matters little;
+  the win is the non-linear decision boundary.
 
-## 6. 평가 지표 (공식 연동)
-- **Utterance EER**(탐지): 표준 EER.
-- **Range-EER**(국소화): 공식 `metric/RangeEER.py`와 **동일 라이브러리(pyannote DetectionCostFunction)·동일 로직** 재현. 입력만 그들의 model pkl 대신 우리 윈도우 점수, 정답은 더 고운 0.02s 라벨.
+## 6. Evaluation metrics (official)
+- **Utterance EER** (detection): standard EER on utterance scores.
+- **Range-EER** (localization): reproduces the official `metric/RangeEER.py` using
+  the **same library/logic (pyannote DetectionCostFunction, threshold sweep)**;
+  only the input is our window scores instead of their model pkl. Reference uses
+  the finer 0.02 s labels.
 
-## 7. 실험 결과
-
-### 7.1 dev 1,500 샘플, 70/30 발화 분할 — *낙관적 기준선*
-| 특징 | 모델 | Utt-EER% | Range-EER% |
+## 7. Results
+### 7.1 dev 1,500-sample, 70/30 utterance split — *optimistic baseline*
+| feature | model | Utt-EER% | Range-EER% |
 |---|---|---:|---:|
-| stft | 단순회귀 | 9.56 | 13.96 |
-| full | 단순회귀 | 11.07 | 11.05 |
+| stft | LogReg | 9.56 | 13.96 |
+| full | LogReg | 11.07 | 11.05 |
 | stft | LightGBM | 2.69 | 9.96 |
 | stft+phase+disc | LightGBM | 1.85 | 8.27 |
 | **full** | **LightGBM** | **0.84** | **7.69** |
-| full + 시간맥락 k=1 | LightGBM | 1.51 | **6.96** |
+| full + context k=1 | LightGBM | 1.51 | **6.96** |
 
-> **단순회귀 → LightGBM 전환만으로 탐지 11%→0.8%, 국소화 11%→7.7%.**
+> LogReg → LightGBM alone: detection 11% → 0.8%, localization 11% → 7.7%.
 
-### 7.2 정식 프로토콜 — train(25,380) 학습 → dev(24,844) 전체 평가 (LightGBM) ⭐ *신뢰 수치*
-| 특징 | win-EER% | Utt-EER% | Range-EER% |
+### 7.2 Official protocol — train(25,380) → dev(24,844) full (LightGBM) ⭐
+| feature | win-EER% | Utt-EER% | Range-EER% |
 |---|---:|---:|---:|
 | lfcc | 14.91 | 5.91 | 12.61 |
 | stft | 10.77 | 2.91 | 9.78 |
 | stft+phase+disc | 8.69 | 2.43 | 8.10 |
 | **full** | 7.67 | **2.22** | **7.93** |
 
-### 7.4 정식 프로토콜 — train 학습 → eval(71,237) held-out 평가 (LightGBM) ⭐⭐ *최종 신뢰 수치*
-| 특징 | win-EER% | Utt-EER% | Range-EER% |
+### 7.3 Official protocol — train → eval(71,237) held-out (LightGBM) ⭐⭐ *final trusted numbers*
+| feature | win-EER% | Utt-EER% | Range-EER% |
 |---|---:|---:|---:|
 | lfcc | 24.46 | 19.27 | 25.47 |
 | stft | 22.99 | 15.61 | 25.22 |
 | stft+phase+disc | 22.96 | 15.83 | 26.02 |
 | **full** | 21.57 | **13.88** | **24.60** |
 
-### 7.5 낙관 → 정식 → held-out (발표 핵심 프레이밍)
-| full 특징 | dev 내부분할(낙관) | 정식 train→dev | **정식 train→eval(최종)** |
+### 7.4 Optimistic → official → held-out (key framing)
+| full feature | dev internal (optimistic) | train→dev | **train→eval (final)** |
 |---|---:|---:|---:|
-| Utt-EER(탐지) | 0.84 | 2.22 | **13.88** |
-| Range-EER(국소화) | 7.69 | 7.93 | **24.60** |
+| Utt-EER (detection) | 0.84 | 2.22 | **13.88** |
+| Range-EER (localization) | 7.69 | 7.93 | **24.60** |
 
-> **세 단계로 현실화**: 낙관 0.84% → 같은분포 dev 2.22% → **미학습 공격 eval 13.88%**.
-> eval은 ASVspoof2019 LA의 **unseen TTS/VC 공격**이라 일반화 갭이 큼(딥 SOTA도 eval에선 크게 오름).
-> **13.88%(탐지)/24.60%(국소화)가 신뢰할 최종 수치.** "낙관+정식+held-out 병기"가 정직성·현실성.
+> Three-stage reality check: optimistic 0.84% → in-domain dev 2.22% →
+> **unseen-attack eval 13.88%**. eval contains **unseen TTS/VC attacks**
+> (ASVspoof2019 LA A07–A19 vs. train/dev A01–A06), so the generalization gap is
+> expected (deep SOTA also degrades on eval). **13.88% / 24.60% are the trusted
+> final numbers.** Reporting all three is honesty + realism.
 
-## 8. 신뢰성 점검
-### 8.1 화자 누수 (확인 완료 — 누수 아님)
-| 분할 | 화자 겹침 | Utt-EER | Range-EER |
+## 8. Reliability checks
+### 8.1 Speaker leakage (checked — none)
+| split | speaker overlap | Utt-EER | Range-EER |
 |---|---|---:|---:|
-| 발화 분할(현재) | 20/20 전부 | 0.84 | 7.69 |
-| 화자 분리 분할 | 0 | **0.59** | 8.61 |
+| utterance split (current) | 20/20 (all) | 0.84 | 7.69 |
+| speaker-disjoint split | 0 | **0.59** | 8.61 |
 
-화자를 완전 분리해도 탐지가 나빠지지 않음(오히려 0.59) → **모델이 화자를 외워 맞추는 게 아님**. PartialSpoof 같은 화자 설계로 화자 단서가 무력하다는 가설 확인. (dev 화자 20명 한계 → 진짜 검증은 train→eval.)
+Fully disjoint speakers do not hurt detection (even 0.59) → the model is **not
+memorizing speakers**. Confirms PS's same-speaker design neutralizes speaker cues.
+(dev has only 20 speakers; the real test is train→eval.)
 
-### 8.2 왜 수치가 높은가 / 정직한 프레이밍
-- dev **내부 분할**(같은 분포)이라 낙관적. STFT 771차원 통째 등 과적합 여지.
-- **정식 프로토콜(train 학습→dev/eval 평가)에선 수치가 오를(나빠질) 것이며 그게 신뢰 수치.**
-- 발표 프레이밍: *"dev 내부분할 0.84% (낙관적) → 정식 eval에선 X% (신뢰 수치)"* 로 **둘 다 제시**.
+### 8.2 Is the gap overfitting?
+Not sample-overfitting (handcrafted features + regularized GBM, and dev is fine at
+2.22%). It is **specialization to the seen attack distribution** (A01–A06) that
+does not transfer to **unseen attacks** (A07–A19) — a known ASVspoof challenge,
+i.e. a domain/attack-generalization gap, not high variance.
 
-## 9. 핵심 발견 (발표 스토리)
-1. **STFT 탐지 최강 + 위상·불연속이 보탬**(직교 정보; 공식 Range-EER 13.96→11.05).
-2. **반직관: F0(피치)는 안 통한다.** overlap-add가 "가장 매끄러운 join"을 골라 **피치 불연속을 적이 제거**. 반대로 **위상은 못 지워 경계검출 최강**(F1 0.355 vs F0 0.127).
-3. **단순회귀 → LightGBM 도약**이 가장 큰 향상.
-4. **공식 Range-EER 연동**으로 국소화를 제대로 측정.
+## 9. Key findings (presentation story)
+1. **STFT is the strongest detector**; phase + discontinuity add on top
+   (official Range-EER 13.96 → 11.05 on the optimistic split).
+2. **Counter-intuitive: F0 (pitch) does not work.** The construction picks the
+   smoothest join via overlap-add, so the **attacker already removed the pitch
+   discontinuity**; **phase** survives best for boundary detection
+   (F1 0.355 vs F0 0.127).
+3. **LogReg → LightGBM** is the single biggest improvement.
+4. **Official Range-EER** integrated for proper localization measurement.
 
-## 10. 한계 & 남은 작업
-- [진행중] **전체데이터 정식 평가** (train 학습 → dev/eval) — `build_full.py`(멀티프로세싱). 0.84%를 신뢰 수치로 확정하는 마지막 관문.
-- [예정] F0 정리(안 통하니 제외, 단 "왜 빼나"는 발표에 유지), PDF/보고서 최신화, 비교표·15분 발표.
+## 10. Limitations & next
+- Closing the unseen-attack gap is a fundamental limit of handcrafted DSP (would
+  need SSL features / augmentation / domain generalization — out of scope for a
+  "simple model").
+- The gap is a **finding to explain, not a defect to hide**.
+- Remaining: feature-importance analysis, report/README refresh, 15-min talk.
 
-## 11. 코드 구조
+## 11. Code layout
 ```
-src/  ps_data · features · pipeline · model · evaluate · run · seam_detect · build_full · make_report
-analysis/  탐색·그림 (라벨검증, 해상도비교, 이음새 DSP, 탐지분해 등)
-figures/ results/ report/  산출물
+src/  ps_data · features · pipeline · model · evaluate · run · run_full ·
+      build_full · seam_detect · compare_methods · make_report
+analysis/  exploratory & figure scripts
+figures/ results/ report/  artifacts
 ```

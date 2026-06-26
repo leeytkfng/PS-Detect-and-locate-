@@ -1,91 +1,79 @@
 # PS-Detect-and-locate
 
 Partial-spoof (PS) **detection & localization** on the
-[PartialSpoof](https://github.com/nii-yamagishilab/partialspoof) database (v1.2).
+[PartialSpoof](https://github.com/nii-yamagishilab/partialspoof) database (v1.2),
+using **DSP features + a light tabular model (LightGBM)** — no deep learning.
 
-A partial spoof embeds short synthetic/edited speech segments into otherwise
-genuine human audio. The goal here is to use **DSP features + a simple model**
-to (a) decide whether an utterance contains spoofed speech and (b) **localize
-which time spans are spoofed**.
+A partial spoof embeds short synthetic (TTS/VC) speech into otherwise genuine,
+same-speaker audio. The task: decide whether an utterance contains spoof
+(**detection**) and find which time spans are spoofed (**localization**).
 
-## Dataset (dev subset used here)
-
-Downloaded from Zenodo record `5766198` via the upstream `01_download_database.sh`.
-We use the **dev** split only (train/eval are ~5–6 GB each and skipped for now).
-
-| source | content |
-|---|---|
-| `dev/con_wav/<id>.wav` | 24,844 utterances, 16 kHz mono |
-| `protocols/.../PartialSpoof.LA.cm.dev.trl.txt` | utterance label (`bonafide`/`spoof`) |
-| `segment_labels/dev_seglab_<res>.npy` | per-frame `0/1` labels at 7 resolutions (0.01–0.64 s) |
-
-**Verified facts**
-- Frame label convention: **`1` = bonafide, `0` = spoof**.
-- IDs: `LA_D_*` = original genuine ASVspoof2019 utterance (all `1`);
-  `CON_D_*` = concatenated (may be partially spoofed).
-- dev counts agree across all four sources: **24,844 total = 2,548 bonafide + 22,296 spoof**
-  (of the 22,296 spoof: 9,900 fully spoofed, 12,396 *partial* spoof).
-- Segment-label `.npy` is a 0-d object array wrapping `defaultdict{utt_id: array}`;
-  `#frames == ceil(duration / resolution)` at every resolution.
-
-> Note: the dataset itself is **not** committed (see `.gitignore`); it lives in the
-> local `partialspoof/` clone. Set `PS_DATA` to point the code at another copy.
-
-## Layout
+## Approach (7-step pipeline)
 
 ```
-src/        pipeline (ps_data, features, pipeline, model, evaluate, run) + make_report
-analysis/   exploratory / figure scripts (label verification, seam DSP, ...)
-figures/    generated plots
-results/    saved experiment outputs
-report/     PDF report
+[1] audio 16 kHz
+[2] framing 25 ms / 10 ms hop
+[3] DSP features:  magnitude (STFT, LFCC+Δ+ΔΔ) | phase (IF-dev, flux) |
+                   discontinuity (spectral flux, log-energy d2) | seam (F0/novelty)
+[4] window pooling 0.16 s (mean+std+max)  -> aligned 1:1 with segment labels
+[5] classifier:  LogReg (baseline)  ->  LightGBM (main)
+[6] window P(spoof):  localization = sequence,  detection = max pooling
+[7] median smoothing + evaluation (Utterance EER / Range-EER)
 ```
 
-## Pipeline
+**Why these features?** Spoof segments are the *same speaker* spliced in, so
+speaker cues are useless. magnitude catches vocoder spectral texture; phase
+catches vocoder phase incoherence; discontinuity/seam catch the concatenation
+join. (Notably, F0/pitch is *not* useful — the construction's overlap-add already
+smooths pitch at the seam; phase survives best.)
 
-```
-[1] audio (16kHz wav)
-[2] framing (25ms / 10ms hop)
-[3] DSP features (per frame)
-    A. magnitude : STFT log-mag, LFCC(+d+dd)
-    B. phase     : IF-deviation, phase flux
-    C. discontinuity : spectral flux, log-energy d2
-[4] window pooling (0.16s, mean+std+max)  -> 1:1 with segment labels
-[5] light classifier (LogReg -> LightGBM)
-[6] window P(spoof):  localization = sequence,  detection = max pool
-[7] post-proc (median smoothing) + eval (EER / Range-EER)
-```
+**Why LightGBM?** The pooled DSP features are 1101-dim *tabular* data, where
+gradient-boosted trees give strong non-linear boundaries, stay light, and remain
+interpretable — matching the assignment's "simple model" while avoiding deep nets.
 
-| module | role | step |
-|---|---|---|
-| `src/ps_data.py` | data access, protocol/label loaders | [1] |
-| `src/features.py` | framing + DSP feature groups + pooling | [2][3][4] |
-| `src/pipeline.py` | sampling + window dataset build | [1][2][4] |
-| `src/model.py` | classifier, detection max-pool, smoothing | [5][6][7] |
-| `src/evaluate.py` | EER metrics (+ Range-EER stub) | [7] |
-| `src/run.py` | end-to-end orchestration | [1]->[7] |
+## Dataset
 
-`analysis/` holds exploratory/figure scripts (label verification, resolution
-comparison, seam DSP analysis). `src/make_report.py` builds the PDF report.
+PartialSpoof v1.2 (from Zenodo `5766198`). dev/train/eval used **in full** for the
+official protocol. Verified facts:
+- segment labels are `.npy` (per-frame 0/1, 7 resolutions); **1 = bonafide,
+  0 = spoof**; `#frames = ceil(duration / resolution)`.
+- dev = 24,844 = 2,548 bonafide (`LA_D_*`) + 22,296 spoof (`CON_D_*`).
+
+> The dataset itself is **not** committed (see `.gitignore`); it lives in the local
+> `partialspoof/` clone. Set `PS_DATA` to point the code elsewhere.
+
+## Results (LightGBM, `full` feature set)
+
+| protocol | Utt-EER (detection) | Range-EER (localization) |
+|---|---:|---:|
+| dev internal split (optimistic) | 0.84 % | 7.69 % |
+| **train → dev** (in-domain) | 2.22 % | 7.93 % |
+| **train → eval** (unseen attacks, final) | **13.88 %** | **24.60 %** |
+
+The dev→eval gap is the known ASVspoof **unseen-attack generalization** challenge
+(seen A01–A06 vs unseen A07–A19), not sample overfitting — speaker-leakage was
+checked and ruled out. Full tables, methodology, and findings in
+**[DESIGN.md](DESIGN.md)** and **[RESULTS.md](RESULTS.md)**.
 
 ## Quick start
 
 ```bash
-python3 src/run.py                 # full pipeline, compares feature sets
-python3 src/run.py --smooth 5      # with median smoothing
-python3 src/ps_data.py CON_D_0000000 0.16   # inspect one utterance
+pip install -r requirements.txt
+# 1) download dev/train/eval into ./partialspoof (see partialspoof/01_download_database.sh)
+python3 src/build_full.py train        # extract+cache features (multiprocessing)
+python3 src/build_full.py dev
+python3 src/run_full.py --test dev --backend lgbm     # official train->dev
+python3 src/run_full.py --test eval --backend lgbm    # official train->eval
+python3 src/run.py --backend lgbm                     # quick dev-internal sweep
+python3 src/ps_data.py CON_D_0000000 0.16             # inspect one utterance
 ```
 
-## Results (dev, simple logistic-regression baseline)
+## Layout
 
-| feature set | win-EER% | win-EER% +smooth | utt-EER% |
-|---|---:|---:|---:|
-| lfcc | 21.1 | 18.1 | 22.0 |
-| stft | 18.1 | 15.2 | 9.6 |
-| stft+phase+disc | 16.1 | 13.6 | 9.6 |
-| **full** (stft+lfcc+phase+disc) | **14.3** | **12.4** | 11.1 |
-
-Phase + discontinuity add to STFT (localization), and median smoothing helps
-further. Detection (utterance) is best with STFT. Still a simple-regression
-baseline; next: official **Range-EER**, finer resolution, LightGBM/CNN.
-See **[RESULTS.md](RESULTS.md)**.
+```
+src/        pipeline (ps_data, features, pipeline, model, evaluate, run, run_full,
+            build_full, seam_detect, compare_methods) + make_report
+analysis/   exploratory / figure scripts (label verification, seam DSP, ...)
+figures/ results/ report/   artifacts
+DESIGN.md   full design + results + reliability checks
+```
