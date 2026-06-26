@@ -1,0 +1,12 @@
+# 정식 프로토콜 | train -> dev | backend=lgbm | R=0.16s
+  train: 25380 utts / 558407 win (spoof 0.543)
+  dev: 24844 utts / 560279 win (spoof 0.538)
+
+feature set        dim | win-EER | Utt-EER Utt-AUC | Range-EER
+--------------------------------------------------------------
+lfcc               180 |   14.91 |    5.91   0.982 |     12.61
+stft               771 |   10.77 |    2.91   0.994 |      9.78
+stft+phase+disc    921 |    8.69 |    2.43   0.996 |      8.10
+full              1101 |    7.67 |    2.22   0.996 |      7.93
+
+Utt-EER/win-EER = dev 전체 | Range-EER = dev 부분집합 1376발화 (median 평활). 정식 프로토콜(train 학습) 신뢰 수치.
