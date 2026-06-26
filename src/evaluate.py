@@ -40,6 +40,64 @@ def utt_metrics(win_scores, utt_groups, utt_is_spoof):
     return {"eer": e, "auc": roc_auc_score(yt, us)}
 
 
-def range_eer(*a, **k):
-    raise NotImplementedError(
-        "Use metric/RangeEER.py with exported score_ali pkl (next step).")
+def _spoof_runs_to_annotation(scores, R, th):
+    """윈도우 P(가짜) >= th 인 연속 구간을 spoof Segment로 (run-length)."""
+    from pyannote.core import Annotation, Segment
+    ann = Annotation()
+    sp = scores >= th
+    i, n = 0, len(sp)
+    while i < n:
+        if sp[i]:
+            j = i
+            while j < n and sp[j]:
+                j += 1
+            ann[Segment(i * R, j * R)] = "spoof"
+            i = j
+        else:
+            i += 1
+    return ann
+
+
+def _intervals_to_annotation(intervals):
+    """[(start,end), ...] (정답 spoof 구간) -> pyannote Annotation."""
+    from pyannote.core import Annotation, Segment
+    ann = Annotation()
+    for s, e in intervals:
+        ann[Segment(s, e)] = "spoof"
+    return ann
+
+
+def range_eer(per_utt, R, n_th=60):
+    """공식 PartialSpoof Range-based EER (Zhang et al. 2023) 재현.
+
+    pyannote DetectionCostFunction(시간/구간 기반)을 임계값 스윕으로 FPR=FNR
+    지점을 찾는다. metric/RangeEER.py와 동일 라이브러리·로직이되, 입력만
+    그들의 model score_ali pkl 대신 우리 윈도우 점수.
+
+    per_utt : [dict(scores=np[win], dur=float, ref=[(s,e),...]), ...]
+    R       : 윈도우(=가설 프레임) 길이[초].  반환: (EER%, threshold)
+    """
+    from pyannote.metrics.detection import DetectionCostFunction
+    from pyannote.core import Segment
+
+    items, allsco = [], []
+    for u in per_utt:
+        items.append((np.asarray(u["scores"], float),
+                      _intervals_to_annotation(u["ref"]),
+                      Segment(0, u["dur"])))
+        allsco.append(np.asarray(u["scores"], float))
+    ths = np.quantile(np.concatenate(allsco), np.linspace(0.02, 0.98, n_th))
+
+    fprs, fnrs = [], []
+    for th in ths:
+        dcf = DetectionCostFunction()
+        for sco, ref, uem in items:
+            dcf(reference=ref, hypothesis=_spoof_runs_to_annotation(sco, R, th),
+                uem=uem, detailed=False)
+        a = dcf.accumulated_
+        fpr = a["false alarm"] / a["negative class total"] if a["negative class total"] else 0.0
+        fnr = a["miss"] / a["positive class total"] if a["positive class total"] else 0.0
+        fprs.append(fpr); fnrs.append(fnr)
+    fprs, fnrs = np.array(fprs), np.array(fnrs)
+    i = int(np.argmin(np.abs(fprs - fnrs)))
+    return (fprs[i] + fnrs[i]) / 2 * 100, float(ths[i])
