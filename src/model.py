@@ -19,8 +19,10 @@ from sklearn.pipeline import make_pipeline
 FEATURE_SETS = {
     "lfcc":            ["lfcc"],
     "stft":            ["stft"],
+    "seam":            ["seam"],
     "stft+phase+disc": ["stft", "phase", "disc"],
     "full":            ["stft", "lfcc", "phase", "disc"],
+    "full+seam":       ["stft", "lfcc", "phase", "disc", "seam"],
 }
 
 

@@ -17,6 +17,8 @@ mean + std + MAX 로 풀링한다 -- max가 윈도우 내부의 불연속 peak�
 import numpy as np
 import librosa
 from scipy.fftpack import dct
+from scipy.ndimage import median_filter
+import parselmouth
 
 SR        = 16000
 WIN       = 400          # 25 ms 분석 윈도우
@@ -27,7 +29,9 @@ N_CEPS    = 20           # 켑스트럼 계수 개수
 N_BANDS   = 16           # phase/disc 밴드 묶음 개수
 POOL_STATS = ("mean", "std", "max")
 
-GROUPS = ("stft", "lfcc", "phase", "disc")
+GROUPS = ("stft", "lfcc", "phase", "disc", "seam")
+
+F0_FLOOR, F0_CEIL = 75, 500     # F0 탐색 범위 (Hz)
 
 
 # ----------------------------------------------------------- 공용 STFT
@@ -119,10 +123,57 @@ def disc_seq(audio):
                            np.abs(d2)[:, None]], axis=1).astype(np.float32)
 
 
+# ----------------------------------------------------------- seam(이음새) 그룹
+def _f0_aligned(audio, T):
+    """STFT 프레임 격자(T)에 맞춘 F0(Hz)와 유성 플래그. parselmouth(Praat) 사용."""
+    try:
+        snd = parselmouth.Sound(np.ascontiguousarray(audio, np.float64), SR)
+        pitch = snd.to_pitch(time_step=HOP / SR,
+                             pitch_floor=F0_FLOOR, pitch_ceiling=F0_CEIL)
+        f0 = pitch.selected_array["frequency"]      # 0 = 무성
+        tp = np.asarray(pitch.xs())
+    except Exception:
+        return np.zeros(T, np.float32), np.zeros(T, np.float32)
+    if len(f0) == 0:
+        return np.zeros(T, np.float32), np.zeros(T, np.float32)
+    tt = np.arange(T) * HOP / SR
+    idx = np.clip(np.searchsorted(tp, tt), 0, len(f0) - 1)   # 최근접 정렬
+    f0a = f0[idx].astype(np.float32)
+    return f0a, (f0a > 0).astype(np.float32)
+
+
+def seam_seq(audio):
+    """(T, 4): 이음새 직격 특징 - 자연 음성의 '매끄러움'이 깨지는 지점을 잡는다.
+
+      col0  |Δlog F0|       : 피치 궤적 점프 (유성 연속 구간에서만)
+      col1  |Δvoiced|       : 유성<->무성 전환 (이음새가 VAD 경계와 겹침)
+      col2  spectral novelty: 인접 프레임 음색(크기 스펙트럼) 코사인 거리
+      col3  local novelty   : novelty - 로컬 중앙값 (날카로운 점프만 강조)
+    """
+    S = np.abs(stft_complex(audio)).T                # (T, bins)
+    T = S.shape[0]
+
+    f0, voiced = _f0_aligned(audio, T)
+    logf0 = np.log(f0 + 1e-6)
+    df0 = np.zeros(T, np.float32)
+    df0[1:] = np.abs(np.diff(logf0)) * (voiced[1:] * voiced[:-1])
+    vchg = np.zeros(T, np.float32)
+    vchg[1:] = np.abs(np.diff(voiced))
+
+    Sn = S / (np.linalg.norm(S, axis=1, keepdims=True) + 1e-10)
+    nov = np.zeros(T, np.float32)
+    nov[1:] = 1.0 - np.sum(Sn[1:] * Sn[:-1], axis=1)     # 코사인 거리
+    base = median_filter(nov, size=9, mode="nearest")
+    novc = np.clip(nov - base, 0, None)                  # 국소 대비 (peak)
+
+    return np.stack([df0, vchg, nov, novc], axis=1).astype(np.float32)
+
+
 _SEQ_FN = {"stft": logmag_seq,
            "lfcc": lambda a: add_deltas(lfcc_seq(a)),
            "phase": phase_seq,
-           "disc": disc_seq}
+           "disc": disc_seq,
+           "seam": seam_seq}
 
 
 # ----------------------------------------------------------- [4] 풀링
