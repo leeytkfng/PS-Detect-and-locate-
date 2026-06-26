@@ -31,6 +31,8 @@ def compose(Xdict, names):
 
 
 def make_clf(backend="logreg"):
+    """tabular 분류기 백엔드. 윈도우 단위 특징은 정형(tabular) 데이터라 트리/부스팅이 강함.
+    윈도우 라벨은 거의 균형(spoof~0.5)이라 class_weight 영향은 작음."""
     if backend == "lgbm":
         try:
             from lightgbm import LGBMClassifier
@@ -40,7 +42,22 @@ def make_clf(backend="logreg"):
                                   verbosity=-1)
         except Exception:
             pass  # 실패하면 조용히 logreg로 폴백
-    return make_pipeline(
+    if backend == "rf":                                  # 배깅 트리
+        from sklearn.ensemble import RandomForestClassifier
+        return RandomForestClassifier(n_estimators=200, n_jobs=-1,
+                                      min_samples_leaf=5, max_features="sqrt",
+                                      class_weight="balanced")
+    if backend == "histgb":                              # sklearn 부스팅(빠름)
+        from sklearn.ensemble import HistGradientBoostingClassifier
+        return HistGradientBoostingClassifier(max_iter=300, learning_rate=0.05,
+                                              max_leaf_nodes=63)
+    if backend == "mlp":                                 # 얕은 신경망(tabular)
+        from sklearn.neural_network import MLPClassifier
+        return make_pipeline(
+            StandardScaler(),
+            MLPClassifier(hidden_layer_sizes=(256, 128), max_iter=60,
+                          early_stopping=True))
+    return make_pipeline(                                # logreg (선형 베이스라인)
         StandardScaler(),
         LogisticRegression(max_iter=3000, class_weight="balanced"))
 
