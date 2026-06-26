@@ -14,6 +14,7 @@ import argparse
 import numpy as np
 from sklearn.model_selection import GroupShuffleSplit
 
+import ps_data as P
 import pipeline as PL
 import model as M
 import evaluate as E
@@ -35,22 +36,34 @@ def run(R=0.16, seed=0, backend="logreg", smooth=5,
     for g in range(groups.max() + 1):
         utt_spoof[g] = int(y[groups == g].any())
 
-    hdr = (f"{'feature set':<17}{'dim':>5} | {'win-EER':>7}{'win-AUC':>8}"
-           f"{'win-F1':>7} | {'utt-EER':>7}{'utt-AUC':>8} | {'win-EER+sm':>10}")
+    # Range-EER용 정답: 더 고운 0.02s 라벨로 spoof 구간(ref)·길이(dur) 1회 준비
+    seg_fine = P.load_seglab(0.02)
+    test_utts = np.unique(g_te)
+    ref_dur = {}
+    for g in test_utts:
+        u = uids[g]
+        ref = [(a, b) for a, b, lab in P.frames_to_intervals(seg_fine[u].tolist(), 0.02)
+               if lab == "spoof"]
+        n_win = int((g_te == g).sum())
+        ref_dur[g] = (ref, n_win * R)
+
+    hdr = (f"{'feature set':<17}{'dim':>5} | {'win-EER':>7} | "
+           f"{'Utt-EER':>7}{'Utt-AUC':>8} | {'Range-EER':>9}")
     print(hdr); print("-" * len(hdr))
     for name, grps in M.FEATURE_SETS.items():
         Xtr = M.compose({g: X[g][tr] for g in grps}, grps)
         Xte = M.compose({g: X[g][te] for g in grps}, grps)
         s, _ = M.fit_predict(Xtr, y[tr], Xte, backend=backend)
         wm = E.window_metrics(y[te], s)
-        um = E.utt_metrics(s, g_te, utt_spoof)
-        s_sm = M.median_smooth(s, g_te, k=smooth)
-        wm_sm = E.window_metrics(y[te], s_sm)
-        print(f"{name:<17}{Xtr.shape[1]:>5} | {wm['eer']:>7.2f}{wm['auc']:>8.3f}"
-              f"{wm['f1']:>7.3f} | {um['eer']:>7.2f}{um['auc']:>8.3f} | "
-              f"{wm_sm['eer']:>10.2f}")
-    print("\nwin-* localization (per window) | utt-* detection (max pool) | "
-          "+sm = median-smoothed window EER")
+        um = E.utt_metrics(s, g_te, utt_spoof)            # Utterance EER (탐지)
+        s_sm = M.median_smooth(s, g_te, k=smooth)         # 후처리
+        per = [dict(scores=s_sm[g_te == g], dur=ref_dur[g][1], ref=ref_dur[g][0])
+               for g in test_utts]
+        reer, _ = E.range_eer(per, R)                     # Range-EER (국소화)
+        print(f"{name:<17}{Xtr.shape[1]:>5} | {wm['eer']:>7.2f} | "
+              f"{um['eer']:>7.2f}{um['auc']:>8.3f} | {reer:>9.2f}")
+    print("\nUtt-EER = Utterance EER(탐지) | Range-EER = 공식 구간기반 EER(국소화, "
+          "0.02s 정답·median 평활 적용) | win-EER = 내부 참고치")
 
 
 if __name__ == "__main__":
