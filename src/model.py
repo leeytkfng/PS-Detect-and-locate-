@@ -19,10 +19,8 @@ from sklearn.pipeline import make_pipeline
 FEATURE_SETS = {
     "lfcc":            ["lfcc"],
     "stft":            ["stft"],
-    "seam":            ["seam"],
     "stft+phase+disc": ["stft", "phase", "disc"],
     "full":            ["stft", "lfcc", "phase", "disc"],
-    "full+seam":       ["stft", "lfcc", "phase", "disc", "seam"],
 }
 
 
@@ -42,6 +40,11 @@ def make_clf(backend="logreg"):
                                   verbosity=-1)
         except Exception:
             pass  # 실패하면 조용히 logreg로 폴백
+    if backend == "xgb":                                 # XGBoost 부스팅
+        from xgboost import XGBClassifier
+        return XGBClassifier(n_estimators=300, learning_rate=0.05, max_depth=6,
+                             subsample=0.8, colsample_bytree=0.8,
+                             tree_method="hist", n_jobs=-1, eval_metric="logloss")
     if backend == "rf":                                  # 배깅 트리
         from sklearn.ensemble import RandomForestClassifier
         return RandomForestClassifier(n_estimators=200, n_jobs=-1,

@@ -291,7 +291,7 @@ def build():
         widths=[34, 46, 46, 46], align=["L", "C", "C", "C"])
     pdf.body("값 = EER% / AUC. 헤드라인 9.4%는 쉬운 완전가짜 덕을 보지만, 현실적 위협인 부분가짜도 "
              "STFT로 EER 10.7% / AUC 0.96 -> 단순 회귀치고 유의미. (참고: 딥러닝 SOTA는 발화 EER 0.5~4%.)")
-    pdf.figure("localize_stft_CON_D_0000022.png",
+    pdf.figure("localize_full_CON_D_0000022.png",
                "그림 4. 국소화 예시(STFT). 예측 P(spoof)가 정답 가짜 구간(빨강)에서 임계값 위로 상승.",
                w=160)
 

@@ -29,9 +29,9 @@ N_CEPS    = 20           # 켑스트럼 계수 개수
 N_BANDS   = 16           # phase/disc 밴드 묶음 개수
 POOL_STATS = ("mean", "std", "max")
 
-GROUPS = ("stft", "lfcc", "phase", "disc", "seam")
+GROUPS = ("stft", "lfcc", "phase", "disc")
 
-F0_FLOOR, F0_CEIL = 75, 500     # F0 탐색 범위 (Hz)
+F0_FLOOR, F0_CEIL = 75, 500     # F0 탐색 범위 (Hz, seam_detect 분석용)
 
 
 # ----------------------------------------------------------- 공용 STFT
@@ -142,38 +142,42 @@ def _f0_aligned(audio, T):
     return f0a, (f0a > 0).astype(np.float32)
 
 
-def seam_seq(audio):
-    """(T, 4): 이음새 직격 특징 - 자연 음성의 '매끄러움'이 깨지는 지점을 잡는다.
+# (참고) seam(이음새) 특징은 영역분류에 도움이 안 돼 미채택. 이음새 경계검출 분석은
+# analysis 성격으로 seam_detect.py 에 별도 구현(robust F0 + 위상/novelty 융합).
 
-      col0  |Δlog F0|       : 피치 궤적 점프 (유성 연속 구간에서만)
-      col1  |Δvoiced|       : 유성<->무성 전환 (이음새가 VAD 경계와 겹침)
-      col2  spectral novelty: 인접 프레임 음색(크기 스펙트럼) 코사인 거리
-      col3  local novelty   : novelty - 로컬 중앙값 (날카로운 점프만 강조)
-    """
-    S = np.abs(stft_complex(audio)).T                # (T, bins)
-    T = S.shape[0]
 
-    f0, voiced = _f0_aligned(audio, T)
-    logf0 = np.log(f0 + 1e-6)
-    df0 = np.zeros(T, np.float32)
-    df0[1:] = np.abs(np.diff(logf0)) * (voiced[1:] * voiced[:-1])
-    vchg = np.zeros(T, np.float32)
-    vchg[1:] = np.abs(np.diff(voiced))
+# ----------------------------------------------------------- CQCC (상수-Q 켑스트럼)
+def cqcc_seq(audio):
+    """(T, N_CEPS): Constant-Q Cepstral Coefficients (anti-spoofing 표준 특징).
+    CQT는 저주파 촘촘/고주파 듬성(사람 청각 유사) -> 합성 아티팩트에 민감."""
+    C = np.abs(librosa.cqt(audio, sr=SR, hop_length=HOP,
+                           n_bins=84, bins_per_octave=12))
+    ceps = dct(np.log(C + 1e-10), type=2, axis=0, norm="ortho")[:N_CEPS]
+    return ceps.T.astype(np.float32)
 
-    Sn = S / (np.linalg.norm(S, axis=1, keepdims=True) + 1e-10)
-    nov = np.zeros(T, np.float32)
-    nov[1:] = 1.0 - np.sum(Sn[1:] * Sn[:-1], axis=1)     # 코사인 거리
-    base = median_filter(nov, size=9, mode="nearest")
-    novc = np.clip(nov - base, 0, None)                  # 국소 대비 (peak)
 
-    return np.stack([df0, vchg, nov, novc], axis=1).astype(np.float32)
+# ----------------------------------------------------------- 고주파 대역 특징
+def hf_seq(audio):
+    """(T, 4): 고주파(나이퀴스트 근처) 통계 - 보코더 업샘플/에일리어싱 아티팩트.
+       [>6kHz 에너지비, >4kHz 에너지비, 스펙트럼 롤오프(정규화), 고대역 평탄도]."""
+    S = np.abs(stft_complex(audio))                      # (bins, T)
+    freqs = np.linspace(0, SR / 2, S.shape[0])
+    total = S.sum(0) + 1e-10
+    hf6 = S[freqs >= 6000].sum(0) / total
+    hf4 = S[freqs >= 4000].sum(0) / total
+    cs = np.cumsum(S, axis=0)
+    roll = freqs[np.argmax(cs >= 0.85 * cs[-1], axis=0)] / (SR / 2)
+    hb = S[freqs >= 4000] + 1e-10
+    flat = np.exp(np.mean(np.log(hb), 0)) / np.mean(hb, 0)
+    return np.stack([hf6, hf4, roll, flat], axis=1).astype(np.float32)
 
 
 _SEQ_FN = {"stft": logmag_seq,
            "lfcc": lambda a: add_deltas(lfcc_seq(a)),
            "phase": phase_seq,
            "disc": disc_seq,
-           "seam": seam_seq}
+           "cqcc": lambda a: add_deltas(cqcc_seq(a)),   # 표준특징 비교용(분석)
+           "hf": hf_seq}                                # 고주파 대역(분석)
 
 
 # ----------------------------------------------------------- [4] 풀링
