@@ -42,7 +42,8 @@ def evaluate_on(clf, split):
     s = clf.predict_proba(M.compose({k: X[k] for k in FEAT}, FEAT))[:, 1]
     um = E.utt_metrics(s, g, utt_is_spoof(y, g))
     sub, rd = prep(split, u, g)
-    per = [dict(scores=gsmooth(s, g)[g == x], dur=rd[x][1], ref=rd[x][0]) for x in sub]
+    ss = gsmooth(s, g)                       # 평활 1회만 (버그수정: 컴프리헨션 밖)
+    per = [dict(scores=ss[g == x], dur=rd[x][1], ref=rd[x][0]) for x in sub]
     return um["eer"], E.range_eer(per, R)[0]
 
 

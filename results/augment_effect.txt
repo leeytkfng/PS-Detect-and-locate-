@@ -1,0 +1,7 @@
+# 증강 효과 (LightGBM full, gaussian-1.0 평활) | train clean 558407 / +aug 1116814 win
+
+  train          dev Utt dev Range eval Utt eval Range
+  clean             2.22      6.42    13.88      24.89
+  clean+aug         2.62      6.67    15.54      24.21
+
+  train만 증강(noise/reverb/codec/rawboost). dev/eval 깨끗. unseen 갭 변화 관찰.
