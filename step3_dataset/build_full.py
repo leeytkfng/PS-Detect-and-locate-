@@ -8,6 +8,10 @@ split별 con_wav/<split>.lst/segment_labels(<split>_seglab_R.npy)를 읽어
 실행:  python3 src/build_full.py dev            # dev 전체
        python3 src/build_full.py train 0.16     # train, 해상도 0.16
 """
+import os as _os, sys as _sys
+_sys.path[:0] = [f.path for f in _os.scandir(
+    _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+    if f.is_dir() and (f.name.startswith("step") or f.name == "tools")]
 import os, sys, hashlib
 import numpy as np
 import soundfile as sf

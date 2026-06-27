@@ -6,6 +6,10 @@ dev 발화 집합에 대해, 해상도 R의 세그먼트 라벨과 1:1로 정렬
 
 라벨 규약 뒤집기: 정답 프레임 '0'(가짜) -> y=1 (양성=가짜).
 """
+import os as _os, sys as _sys
+_sys.path[:0] = [f.path for f in _os.scandir(
+    _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+    if f.is_dir() and (f.name.startswith("step") or f.name == "tools")]
 import os, hashlib
 import numpy as np
 import soundfile as sf

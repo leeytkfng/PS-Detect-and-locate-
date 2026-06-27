@@ -60,20 +60,29 @@ checked and ruled out. Full tables, methodology, and findings in
 ```bash
 pip install -r requirements.txt
 # 1) download dev/train/eval into ./partialspoof (see partialspoof/01_download_database.sh)
-python3 src/build_full.py train        # extract+cache features (multiprocessing)
-python3 src/build_full.py dev
-python3 src/run_full.py --test dev --backend lgbm     # official train->dev
-python3 src/run_full.py --test eval --backend lgbm    # official train->eval
-python3 src/run.py --backend lgbm                     # quick dev-internal sweep
-python3 src/ps_data.py CON_D_0000000 0.16             # inspect one utterance
+python3 step3_dataset/build_full.py train      # extract+cache features (multiprocessing)
+python3 step3_dataset/build_full.py dev
+python3 step6_run/run_full.py --test dev --backend lgbm    # official train->dev
+python3 step6_run/run_full.py --test eval --backend lgbm   # official train->eval
+python3 step6_run/run.py --backend lgbm                    # quick dev-internal sweep
+python3 step1_data/ps_data.py CON_D_0000000 0.16           # inspect one utterance
 ```
 
-## Layout
+Scripts add the sibling `step*/` and `tools/` dirs to `sys.path` automatically,
+so they run from anywhere in the repo.
+
+## Layout — step-by-step pipeline
 
 ```
-src/        pipeline (ps_data, features, pipeline, model, evaluate, run, run_full,
-            build_full, seam_detect, compare_methods) + make_report
-analysis/   exploratory / figure scripts (label verification, seam DSP, ...)
+step1_data/        ps_data.py            [1] data access + label verification
+step2_features/    features.py           [2][3] framing + DSP features (mag/phase/disc, +cqcc/hf)
+step3_dataset/     pipeline.py           [4] window pooling + dataset build
+                   build_full.py             full-split feature extraction (parallel)
+step4_model/       model.py              [5][6] classifiers (LogReg/RF/MLP/XGB/HistGB/LightGBM) + pooling/smoothing
+step5_evaluate/    evaluate.py          [7] Utterance EER + Range-EER
+step6_run/         run.py, run_full.py       end-to-end orchestration
+step7_analysis/    analyze_ratio, compare_methods, seam_detect, + exploratory/figure scripts
+tools/             make_report.py            PDF report generator (non-pipeline tool)
 figures/ results/ report/   artifacts
 DESIGN.md   full design + results + reliability checks
 ```

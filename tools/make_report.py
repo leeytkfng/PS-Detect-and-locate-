@@ -9,6 +9,10 @@
 실행:  python3 src/make_report.py
 출력: report/PartialSpoof_DSP_report.pdf
 """
+import os as _os, sys as _sys
+_sys.path[:0] = [f.path for f in _os.scandir(
+    _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+    if f.is_dir() and (f.name.startswith("step") or f.name == "tools")]
 import os
 from fpdf import FPDF
 

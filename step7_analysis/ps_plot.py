@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """PartialSpoof 발화의 파형 + 스펙트로그램을 그리고, (segment_labels의) 가짜
 구간을 음영 처리하여 오디오<->라벨 매칭을 눈으로 확인한다."""
+import os as _os, sys as _sys
+_sys.path[:0] = [f.path for f in _os.scandir(
+    _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+    if f.is_dir() and (f.name.startswith("step") or f.name == "tools")]
 import os, sys
 import numpy as np
 import soundfile as sf
@@ -8,8 +12,6 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-import os as _os, sys as _sys
-_sys.path.insert(0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", "src"))
 import ps_data as P
 
 

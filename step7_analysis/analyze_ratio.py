@@ -7,6 +7,10 @@ train(full)으로 LightGBM 학습 -> eval 예측 -> 발화별 탐지점수(max-p
 
 실행:  python3 src/analyze_ratio.py
 """
+import os as _os, sys as _sys
+_sys.path[:0] = [f.path for f in _os.scandir(
+    _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+    if f.is_dir() and (f.name.startswith("step") or f.name == "tools")]
 import numpy as np
 import build_full as B
 import model as M

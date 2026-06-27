@@ -12,6 +12,10 @@ Utt-EER(탐지) / Range-EER(국소화) / 학습시간 비교.
 
 실행:  python3 src/compare_methods.py
 """
+import os as _os, sys as _sys
+_sys.path[:0] = [f.path for f in _os.scandir(
+    _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+    if f.is_dir() and (f.name.startswith("step") or f.name == "tools")]
 import time
 import numpy as np
 

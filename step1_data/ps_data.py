@@ -11,6 +11,10 @@
   LA_D_*  = 원본 진짜 ASVspoof2019 발화        -> 전부 '1'
   CON_D_* = 이어붙인(concatenated) 발화        -> 일부만 가짜일 수 있음
 """
+import os as _os, sys as _sys
+_sys.path[:0] = [f.path for f in _os.scandir(
+    _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+    if f.is_dir() and (f.name.startswith("step") or f.name == "tools")]
 import os, sys
 import numpy as np
 import soundfile as sf

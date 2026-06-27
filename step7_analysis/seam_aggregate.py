@@ -8,13 +8,15 @@ N개 부분가짜 발화에서 10 ms 프레임마다 계산:
 
 실행:  python3 analysis/seam_aggregate.py [N] [해상도]
 """
+import os as _os, sys as _sys
+_sys.path[:0] = [f.path for f in _os.scandir(
+    _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+    if f.is_dir() and (f.name.startswith("step") or f.name == "tools")]
 import os, sys
 import numpy as np
 import soundfile as sf
 import librosa
 
-import os as _os, sys as _sys
-_sys.path.insert(0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", "src"))
 import ps_data as P
 import pipeline as D
 

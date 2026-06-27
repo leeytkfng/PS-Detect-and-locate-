@@ -16,6 +16,10 @@ precision / recall / F1. 단일 피크 적중률이 아니라 제대로 된 검�
 실행:  python3 src/seam_detect.py            # 300개 부분가짜로 P/R/F1
        python3 src/seam_detect.py plot <uid> # 한 발화 경계점수 그림
 """
+import os as _os, sys as _sys
+_sys.path[:0] = [f.path for f in _os.scandir(
+    _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+    if f.is_dir() and (f.name.startswith("step") or f.name == "tools")]
 import os, sys
 import numpy as np
 import soundfile as sf

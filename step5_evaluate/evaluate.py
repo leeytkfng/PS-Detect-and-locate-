@@ -8,6 +8,10 @@
 range_eer(...)는 공식 PartialSpoof Range-EER(metric/RangeEER.py, pyannote 기반)
 자리표시자. score_ali 포맷으로 점수를 내보낸 뒤 연동 예정.
 """
+import os as _os, sys as _sys
+_sys.path[:0] = [f.path for f in _os.scandir(
+    _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+    if f.is_dir() and (f.name.startswith("step") or f.name == "tools")]
 import numpy as np
 from sklearn.metrics import roc_curve, roc_auc_score, f1_score, balanced_accuracy_score
 

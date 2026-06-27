@@ -11,6 +11,10 @@
 
 실행:  python3 analysis/seam_analysis.py [uid] [해상도]
 """
+import os as _os, sys as _sys
+_sys.path[:0] = [f.path for f in _os.scandir(
+    _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+    if f.is_dir() and (f.name.startswith("step") or f.name == "tools")]
 import os, sys
 import numpy as np
 import soundfile as sf
@@ -19,8 +23,6 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-import os as _os, sys as _sys
-_sys.path.insert(0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", "src"))
 import ps_data as P
 
 N_FFT, HOP = 512, 160      # 32 ms / 10 ms @ 16 kHz

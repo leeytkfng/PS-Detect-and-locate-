@@ -144,10 +144,17 @@ i.e. a domain/attack-generalization gap, not high variance.
 - The gap is a **finding to explain, not a defect to hide**.
 - Remaining: feature-importance analysis, report/README refresh, 15-min talk.
 
-## 11. Code layout
+## 11. Code layout (step-by-step pipeline)
 ```
-src/  ps_data · features · pipeline · model · evaluate · run · run_full ·
-      build_full · seam_detect · compare_methods · make_report
-analysis/  exploratory & figure scripts
-figures/ results/ report/  artifacts
+step1_data/      ps_data.py                 [1] data + label verification
+step2_features/  features.py                [2][3] framing + DSP features
+step3_dataset/   pipeline.py, build_full.py [4] window pooling + dataset build
+step4_model/     model.py                   [5][6] classifiers + pooling/smoothing
+step5_evaluate/  evaluate.py                [7] Utterance EER + Range-EER
+step6_run/       run.py, run_full.py        end-to-end orchestration
+step7_analysis/  analyze_ratio, compare_methods, seam_detect, + exploratory scripts
+tools/           make_report.py             PDF report generator (non-pipeline tool)
+figures/ results/ report/   artifacts
 ```
+Each script bootstraps `sys.path` with the sibling `step*/`+`tools/` dirs, so
+cross-step imports work from any working directory.

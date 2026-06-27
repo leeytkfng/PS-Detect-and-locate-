@@ -9,6 +9,10 @@
   탐지   = 발화 내 윈도우들의 최댓값
   후처리 = 발화별 점수 시퀀스에 median(중앙값) 스무딩
 """
+import os as _os, sys as _sys
+_sys.path[:0] = [f.path for f in _os.scandir(
+    _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+    if f.is_dir() and (f.name.startswith("step") or f.name == "tools")]
 import numpy as np
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LogisticRegression

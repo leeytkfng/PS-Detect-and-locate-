@@ -8,6 +8,10 @@ train 분할로 특징 조합을 학습한 뒤, 테스트 발화 하나에 대�
 
 실행:  python3 analysis/localize_demo.py [feature] [uid]
 """
+import os as _os, sys as _sys
+_sys.path[:0] = [f.path for f in _os.scandir(
+    _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+    if f.is_dir() and (f.name.startswith("step") or f.name == "tools")]
 import os, sys
 import numpy as np
 import soundfile as sf
@@ -17,8 +21,6 @@ import matplotlib.pyplot as plt
 
 from sklearn.model_selection import GroupShuffleSplit
 
-import os as _os, sys as _sys
-_sys.path.insert(0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", "src"))
 import ps_data as P
 import pipeline as D
 import features as F

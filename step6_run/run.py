@@ -10,6 +10,10 @@
 
 실행:  python3 src/run.py [--backend logreg|lgbm] [--R 0.16] [--smooth 5]
 """
+import os as _os, sys as _sys
+_sys.path[:0] = [f.path for f in _os.scandir(
+    _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+    if f.is_dir() and (f.name.startswith("step") or f.name == "tools")]
 import argparse
 import numpy as np
 from sklearn.model_selection import GroupShuffleSplit

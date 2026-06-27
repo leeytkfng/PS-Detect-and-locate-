@@ -9,12 +9,14 @@
 
 실행:  python3 analysis/detect_breakdown.py
 """
+import os as _os, sys as _sys
+_sys.path[:0] = [f.path for f in _os.scandir(
+    _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+    if f.is_dir() and (f.name.startswith("step") or f.name == "tools")]
 import numpy as np
 from sklearn.model_selection import GroupShuffleSplit
 from sklearn.metrics import roc_auc_score
 
-import os as _os, sys as _sys
-_sys.path.insert(0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", "src"))
 import ps_data as P
 import pipeline as D
 import model as MD

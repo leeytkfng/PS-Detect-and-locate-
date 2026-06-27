@@ -14,6 +14,10 @@
 이어붙인 이음새(seam)의 불연속을 잡는다. 이음새는 sparse(몇 프레임뿐)하므로
 mean + std + MAX 로 풀링한다 -- max가 윈도우 내부의 불연속 peak를 보존한다.
 """
+import os as _os, sys as _sys
+_sys.path[:0] = [f.path for f in _os.scandir(
+    _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+    if f.is_dir() and (f.name.startswith("step") or f.name == "tools")]
 import numpy as np
 import librosa
 from scipy.fftpack import dct
