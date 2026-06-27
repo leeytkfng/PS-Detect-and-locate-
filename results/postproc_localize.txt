@@ -1,0 +1,15 @@
+train lgbm(full) ...
+
+# 후처리 평활 tuning (dev에서 선택) | R=0.16s
+  config         dev Range-EER
+  none-0                  9.87
+  median-5                7.84
+  median-7                8.37
+  median-9                8.68
+  median-11               9.36
+  gauss-1.0               6.38
+  gauss-2.0               6.43
+
+# dev 최적 = gauss-1.0 (dev 6.38)
+# eval Range-EER:  baseline(median-5) = 25.56  ->  best(gauss-1.0) = 25.01
+  (dev에서 고른 평활을 eval에 그대로 적용 — 테스트 누수 없음)

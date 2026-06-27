@@ -35,25 +35,36 @@ def load_split_seglab(split, R):
                    allow_pickle=True).item()
 
 
-# 워커: (uid, 라벨배열, wavdir, R, groups) -> (uid, {g:X}, y)  (없으면 None)
+# 워커: (uid, 라벨배열, wavdir, R, groups, aug) -> (uid, {g:X}, y)  (없으면 None)
 def _work(task):
-    uid, labs, wavdir, R, groups = task
+    uid, labs, wavdir, R, groups, aug = task
     try:
         a, _ = sf.read(os.path.join(wavdir, uid + ".wav"))
     except Exception:
         return None
     if a.ndim > 1:
         a = a[:, 0]
+    a = a.astype(np.float32)
+    if aug:                                       # train 증강 (라벨/타이밍 보존)
+        import augment as AUG
+        seed = int(hashlib.md5((uid + "|aug").encode()).hexdigest(), 16) % (2 ** 31)
+        a = AUG.augment_audio(a, np.random.RandomState(seed))
     n = len(labs)
-    feats = F.group_features(a.astype(np.float32), n, R=R, groups=groups)
+    feats = F.group_features(a, n, R=R, groups=groups)
     m = min(n, *(v.shape[0] for v in feats.values()))
     y = (np.asarray(labs[:m]) == "0").astype(np.int64)
     return uid, {g: feats[g][:m] for g in groups}, y
 
 
-def build_split(split, R=0.16, groups=F.GROUPS, n_jobs=N_JOBS, limit=None):
-    key = hashlib.md5(f"{split}|{R}|{','.join(groups)}|{limit}".encode()).hexdigest()[:10]
-    out = os.path.join(CACHE, f"full_{split}_{R}_{key}.npz")
+def _cache_path(split, R, groups, limit, augment):
+    tag = "_aug" if augment else ""
+    base = f"{split}|{R}|{','.join(groups)}|{limit}" + ("|True" if augment else "")
+    key = hashlib.md5(base.encode()).hexdigest()[:10]
+    return os.path.join(CACHE, f"full_{split}{tag}_{R}_{key}.npz")
+
+
+def build_split(split, R=0.16, groups=F.GROUPS, n_jobs=N_JOBS, limit=None, augment=False):
+    out = _cache_path(split, R, groups, limit, augment)
     if os.path.exists(out):
         print("cached:", out); return out
 
@@ -63,7 +74,7 @@ def build_split(split, R=0.16, groups=F.GROUPS, n_jobs=N_JOBS, limit=None):
         uids = [l.strip() for l in f if l.strip()]
     if limit:
         uids = uids[:limit]
-    tasks = [(u, seg[u], wavdir, R, groups) for u in uids if u in seg]
+    tasks = [(u, seg[u], wavdir, R, groups, augment) for u in uids if u in seg]
     print(f"{split}: {len(tasks)} utts, {n_jobs} jobs, groups={groups}")
 
     Xs = {g: [] for g in groups}
@@ -89,9 +100,8 @@ def build_split(split, R=0.16, groups=F.GROUPS, n_jobs=N_JOBS, limit=None):
     return out
 
 
-def load_full(split, R=0.16, groups=F.GROUPS, limit=None):
-    key = hashlib.md5(f"{split}|{R}|{','.join(groups)}|{limit}".encode()).hexdigest()[:10]
-    d = np.load(os.path.join(CACHE, f"full_{split}_{R}_{key}.npz"), allow_pickle=True)
+def load_full(split, R=0.16, groups=F.GROUPS, limit=None, augment=False):
+    d = np.load(_cache_path(split, R, groups, limit, augment), allow_pickle=True)
     X = {k[2:]: d[k] for k in d.files if k.startswith("X_")}
     return X, d["y"], d["groups"], list(d["uids"])
 
