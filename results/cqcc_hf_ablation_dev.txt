@@ -1,0 +1,16 @@
+# CQCC & high-frequency feature check (dev-internal split, LightGBM)
+
+  set            dim   Utt-EER  Range-EER
+  full          1101     0.84      7.69
+  full+cqcc     1281     1.00      9.21
+  full+hf       1113     1.18      7.76
+  full+cqcc+hf  1293     0.16      9.40
+  cqcc (alone)   180     2.69     22.76
+  hf   (alone)    12    18.46     30.13
+
+# Takeaway:
+#  - CQCC alone is strong (Utt-EER 2.69, ~STFT level) = valid standard feature,
+#    but REDUNDANT with our magnitude features -> no gain when added to full.
+#  - HF (high-freq band ratios/rolloff/flatness) weak alone; STFT already covers
+#    the high-freq/Nyquist region.
+#  => answers "why not CQCC?": tested, competitive standalone, dropped as redundant.

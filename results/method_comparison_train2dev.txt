@@ -9,3 +9,6 @@
   lgbm         7.67    2.22   0.996      8.04     30.0
 
   Range-EER = dev 부분집합 1044발화. 동일 특징(full), 분류기만 교체.
+
+# XGBoost (train->dev, full): Utt-EER=2.72  Utt-AUC=0.995  Range-EER=8.73  train=115s
+# -> LightGBM(2.22 / 8.04 / 32s)이 정확도·속도 모두 우위.
