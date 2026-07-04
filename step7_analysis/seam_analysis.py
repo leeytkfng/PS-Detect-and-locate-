@@ -25,16 +25,23 @@ import matplotlib.pyplot as plt
 
 import ps_data as P
 
+# DSP 파라미터
 N_FFT, HOP = 512, 160      # 32 ms / 10 ms @ 16 kHz
 
 
+# DSP 특성 계산 함수
 def dsp_curves(audio, sr):
+    # STFT 계산
     S = np.abs(librosa.stft(audio, n_fft=N_FFT, hop_length=HOP))     # (bins, T)
+    # DSP 특성 계산
     rms = librosa.feature.rms(S=S, frame_length=N_FFT, hop_length=HOP)[0]
+    # 영교차율 계산 
     zcr = librosa.feature.zero_crossing_rate(audio, frame_length=N_FFT,
                                              hop_length=HOP)[0]
     cen = librosa.feature.spectral_centroid(S=S, sr=sr)[0]
+    # 스펙트럼 flux 계산
     Sn = S / (S.sum(axis=0, keepdims=True) + 1e-10)                  # 프레임별 정규화
+    # 
     flux = np.sqrt(((np.diff(Sn, axis=1)) ** 2).sum(axis=0))        # (T-1,)
     flux = np.concatenate([[0.0], flux])
     t = np.arange(S.shape[1]) * HOP / sr
@@ -42,7 +49,9 @@ def dsp_curves(audio, sr):
 
 
 def main(uid="CON_D_0000000", R=0.02):
+    # uid = uid.upper()
     audio, sr = sf.read(os.path.join(P.WAV, uid + ".wav"))
+
     if audio.ndim > 1:
         audio = audio[:, 0]
     audio = audio.astype(np.float32)
